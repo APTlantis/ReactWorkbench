@@ -1,0 +1,31 @@
+[theme]
+id = "light"
+name = "Light"
+description = "Clear neutral surface for day-to-day component review."
+
+[colors]
+background = "#f5f7fb"
+surface = "#ffffff"
+surfaceMuted = "#eef2f7"
+text = "#172033"
+muted = "#667085"
+border = "#d6deea"
+primary = "#2764d8"
+secondary = "#52627a"
+danger = "#c2413d"
+success = "#198754"
+warning = "#b7791f"
+focus = "#5b8def"
+
+[spacing]
+unit = 8
+density = "comfortable"
+
+[radius]
+small = 6
+medium = 8
+large = 12
+
+[typography]
+font = "Inter, Segoe UI, sans-serif"
+scale = 1.0

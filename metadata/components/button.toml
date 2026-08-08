@@ -1,0 +1,56 @@
+[component]
+id = "button"
+name = "Button"
+description = "Primary action component with variants, sizes, and transient loading state."
+themes = ["light", "dark", "aurora"]
+
+[framework]
+react = true
+svelte = false
+
+[[props]]
+id = "variant"
+label = "Variant"
+kind = "enum"
+default = "primary"
+values = ["primary", "secondary", "danger"]
+
+[[props]]
+id = "size"
+label = "Size"
+kind = "enum"
+default = "medium"
+values = ["small", "medium", "large"]
+
+[[props]]
+id = "disabled"
+label = "Disabled"
+kind = "boolean"
+default = "false"
+
+[[props]]
+id = "loading"
+label = "Loading"
+kind = "boolean"
+default = "false"
+
+[[props]]
+id = "label"
+label = "Label"
+kind = "text"
+default = "Save changes"
+
+[[states]]
+id = "primary-ready"
+label = "Primary"
+props = { variant = "primary", size = "medium", disabled = "false", loading = "false", label = "Save changes" }
+
+[[states]]
+id = "danger-loading"
+label = "Danger Loading"
+props = { variant = "danger", size = "medium", disabled = "false", loading = "true", label = "Delete workspace" }
+
+[[states]]
+id = "secondary-disabled"
+label = "Disabled"
+props = { variant = "secondary", size = "small", disabled = "true", loading = "false", label = "Invite member" }

@@ -1,0 +1,44 @@
+[component]
+id = "badge"
+name = "Badge"
+description = "Small status marker for metadata, state, and validation summaries."
+themes = ["light", "dark", "aurora"]
+
+[framework]
+react = true
+svelte = false
+
+[[props]]
+id = "tone"
+label = "Tone"
+kind = "enum"
+default = "info"
+values = ["info", "success", "warning", "danger"]
+
+[[props]]
+id = "emphasis"
+label = "Emphasis"
+kind = "enum"
+default = "soft"
+values = ["soft", "solid"]
+
+[[props]]
+id = "label"
+label = "Label"
+kind = "text"
+default = "Indexed"
+
+[[states]]
+id = "soft-info"
+label = "Info"
+props = { tone = "info", emphasis = "soft", label = "Indexed" }
+
+[[states]]
+id = "solid-success"
+label = "Success"
+props = { tone = "success", emphasis = "solid", label = "Valid" }
+
+[[states]]
+id = "soft-danger"
+label = "Danger"
+props = { tone = "danger", emphasis = "soft", label = "Contrast issue" }

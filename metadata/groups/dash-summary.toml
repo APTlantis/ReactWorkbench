@@ -1,0 +1,21 @@
+[group]
+id = "dash-summary"
+name = "Dashboard Summary"
+description = "A quick health area combining the main metric, validation state, and next action."
+layout = "grid"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "card"
+state = "comfortable-summary"
+role = "Metric"
+
+[[items]]
+component = "badge"
+state = "solid-success"
+role = "State"
+
+[[items]]
+component = "button"
+state = "primary-ready"
+role = "Action"

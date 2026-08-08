@@ -1,0 +1,31 @@
+[theme]
+id = "dark"
+name = "Dark"
+description = "Low-glare theme for dense preview sessions."
+
+[colors]
+background = "#111318"
+surface = "#1b2029"
+surfaceMuted = "#242b36"
+text = "#f3f6fb"
+muted = "#a8b2c1"
+border = "#343d4c"
+primary = "#7aa7ff"
+secondary = "#bdc7d7"
+danger = "#ff7f7a"
+success = "#66d19e"
+warning = "#f2c66d"
+focus = "#9ec0ff"
+
+[spacing]
+unit = 8
+density = "comfortable"
+
+[radius]
+small = 6
+medium = 8
+large = 12
+
+[typography]
+font = "Inter, Segoe UI, sans-serif"
+scale = 1.0

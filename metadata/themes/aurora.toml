@@ -1,0 +1,31 @@
+[theme]
+id = "aurora"
+name = "Aurora"
+description = "Higher personality accent theme without changing component rules."
+
+[colors]
+background = "#f7fbf8"
+surface = "#ffffff"
+surfaceMuted = "#e9f3ef"
+text = "#13231e"
+muted = "#5e7069"
+border = "#c7d9d2"
+primary = "#0f8b8d"
+secondary = "#566b73"
+danger = "#bd3f53"
+success = "#257a55"
+warning = "#b96f24"
+focus = "#3ca6a8"
+
+[spacing]
+unit = 8
+density = "comfortable"
+
+[radius]
+small = 6
+medium = 8
+large = 12
+
+[typography]
+font = "Inter, Segoe UI, sans-serif"
+scale = 1.0

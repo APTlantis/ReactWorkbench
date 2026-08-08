@@ -1,0 +1,56 @@
+[component]
+id = "card"
+name = "Card"
+description = "Content surface for summaries, settings, and compact object previews."
+themes = ["light", "dark", "aurora"]
+
+[framework]
+react = true
+svelte = false
+
+[[props]]
+id = "density"
+label = "Density"
+kind = "enum"
+default = "comfortable"
+values = ["compact", "comfortable", "spacious"]
+
+[[props]]
+id = "tone"
+label = "Tone"
+kind = "enum"
+default = "neutral"
+values = ["neutral", "success", "warning"]
+
+[[props]]
+id = "showFooter"
+label = "Footer"
+kind = "boolean"
+default = "true"
+
+[[props]]
+id = "title"
+label = "Title"
+kind = "text"
+default = "Workspace health"
+
+[[props]]
+id = "metric"
+label = "Metric"
+kind = "number"
+default = "94"
+
+[[states]]
+id = "comfortable-summary"
+label = "Summary"
+props = { density = "comfortable", tone = "neutral", showFooter = "true", title = "Workspace health", metric = "94" }
+
+[[states]]
+id = "compact-warning"
+label = "Compact Warning"
+props = { density = "compact", tone = "warning", showFooter = "true", title = "Theme drift", metric = "7" }
+
+[[states]]
+id = "spacious-success"
+label = "Spacious Success"
+props = { density = "spacious", tone = "success", showFooter = "false", title = "Ready states", metric = "128" }

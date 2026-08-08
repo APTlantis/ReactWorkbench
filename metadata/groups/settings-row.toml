@@ -1,0 +1,21 @@
+[group]
+id = "settings-row"
+name = "Settings Row"
+description = "A compact settings surface with a status badge and a clear action."
+layout = "row"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "badge"
+state = "soft-info"
+role = "Status"
+
+[[items]]
+component = "card"
+state = "compact-warning"
+role = "Summary"
+
+[[items]]
+component = "button"
+state = "secondary-disabled"
+role = "Action"

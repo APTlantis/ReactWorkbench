@@ -1,0 +1,21 @@
+[group]
+id = "danger-zone"
+name = "Danger Zone"
+description = "A destructive action area with warning context and an explicit loading state."
+layout = "stack"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "badge"
+state = "soft-danger"
+role = "Warning"
+
+[[items]]
+component = "card"
+state = "compact-warning"
+role = "Context"
+
+[[items]]
+component = "button"
+state = "danger-loading"
+role = "Destructive Action"
