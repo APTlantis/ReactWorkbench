@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -163,6 +163,22 @@ struct GroupSummary {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct GroupValidation {
+    status: String,
+    issue_count: usize,
+    issues: Vec<GroupValidationIssue>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupValidationIssue {
+    severity: String,
+    title: String,
+    detail: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct PreviewSelection {
     component_id: String,
     theme_id: String,
@@ -246,6 +262,17 @@ fn save_group(app: AppHandle, group: GroupFile) -> Result<GroupFile, String> {
     if group.group.id.is_empty() {
         return Err("Group name must contain at least one letter or number.".to_string());
     }
+    let validation = validate_group_file(&app, &group)?;
+    if validation.issues.iter().any(|issue| issue.severity == "error") {
+        let details = validation
+            .issues
+            .iter()
+            .filter(|issue| issue.severity == "error")
+            .map(|issue| issue.title.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!("Group has blocking validation issues: {details}"));
+    }
 
     let dir = writable_metadata_dir(&app).join("groups");
     fs::create_dir_all(&dir)
@@ -257,6 +284,11 @@ fn save_group(app: AppHandle, group: GroupFile) -> Result<GroupFile, String> {
         .map_err(|error| format!("Could not save group metadata {}: {error}", path.display()))?;
 
     Ok(group)
+}
+
+#[tauri::command]
+fn validate_group(app: AppHandle, group: GroupFile) -> Result<GroupValidation, String> {
+    validate_group_file(&app, &group)
 }
 
 #[tauri::command]
@@ -410,6 +442,86 @@ fn search_index(
     let stdout = String::from_utf8_lossy(&output.stdout);
     serde_json::from_str::<Vec<IndexSearchResult>>(&stdout)
         .map_err(|error| format!("Could not parse DuckDB catalog results: {error}"))
+}
+
+fn validate_group_file(app: &AppHandle, group: &GroupFile) -> Result<GroupValidation, String> {
+    let components = read_all_components(app)?;
+    Ok(validate_group_against_components(group, &components))
+}
+
+fn validate_group_against_components(
+    group: &GroupFile,
+    components: &[ComponentFile],
+) -> GroupValidation {
+    let mut issues = Vec::new();
+    let component_map = components
+        .iter()
+        .map(|component| (component.component.id.as_str(), component))
+        .collect::<BTreeMap<_, _>>();
+
+    if !["row", "grid", "stack"].contains(&group.group.layout.as_str()) {
+        issues.push(GroupValidationIssue {
+            severity: "error".to_string(),
+            title: "Unsupported layout".to_string(),
+            detail: format!("{} is not one of row, grid, or stack.", group.group.layout),
+        });
+    }
+
+    if group.items.is_empty() {
+        issues.push(GroupValidationIssue {
+            severity: "error".to_string(),
+            title: "No group items".to_string(),
+            detail: "A group needs at least one component placement.".to_string(),
+        });
+    }
+
+    let mut roles = BTreeSet::new();
+    for item in &group.items {
+        if item.role.trim().is_empty() {
+            issues.push(GroupValidationIssue {
+                severity: "warning".to_string(),
+                title: "Missing role label".to_string(),
+                detail: format!("{}:{} does not describe what it does in the area.", item.component, item.state),
+            });
+        } else if !roles.insert(item.role.to_lowercase()) {
+            issues.push(GroupValidationIssue {
+                severity: "warning".to_string(),
+                title: "Duplicate role".to_string(),
+                detail: format!("{} appears more than once in this group.", item.role),
+            });
+        }
+
+        let Some(component) = component_map.get(item.component.as_str()) else {
+            issues.push(GroupValidationIssue {
+                severity: "error".to_string(),
+                title: "Missing component".to_string(),
+                detail: format!("{} is not defined in metadata/components.", item.component),
+            });
+            continue;
+        };
+
+        if !component.states.iter().any(|state| state.id == item.state) {
+            issues.push(GroupValidationIssue {
+                severity: "error".to_string(),
+                title: "Missing state".to_string(),
+                detail: format!("{} does not define state {}.", item.component, item.state),
+            });
+        }
+    }
+
+    let status = if issues.iter().any(|issue| issue.severity == "error") {
+        "error"
+    } else if issues.iter().any(|issue| issue.severity == "warning") {
+        "warning"
+    } else {
+        "ready"
+    };
+
+    GroupValidation {
+        status: status.to_string(),
+        issue_count: issues.len(),
+        issues,
+    }
 }
 
 fn build_index_records(app: &AppHandle) -> Result<Vec<IndexRecord>, String> {
@@ -635,6 +747,7 @@ pub fn run() {
             list_groups,
             load_group,
             save_group,
+            validate_group,
             list_themes,
             load_theme,
             save_preview_selection,
@@ -698,6 +811,42 @@ mod tests {
     fn group_names_slugify_to_file_ids() {
         assert_eq!(slugify("Settings Row!"), "settings-row");
         assert_eq!(slugify("  Danger   Zone  "), "danger-zone");
+    }
+
+    #[test]
+    fn group_validation_catches_missing_component_state_and_duplicate_roles() {
+        let components: Vec<ComponentFile> = read_all_toml(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("metadata")
+                .join("components"),
+        )
+        .expect("components should parse");
+        let group = GroupFile {
+            group: GroupInfo {
+                id: "broken".to_string(),
+                name: "Broken".to_string(),
+                description: "Broken group".to_string(),
+                layout: "circle".to_string(),
+                themes: vec!["light".to_string()],
+            },
+            items: vec![
+                GroupItem {
+                    component: "button".to_string(),
+                    state: "missing".to_string(),
+                    role: "Action".to_string(),
+                },
+                GroupItem {
+                    component: "unknown".to_string(),
+                    state: "primary".to_string(),
+                    role: "Action".to_string(),
+                },
+            ],
+        };
+        let validation = validate_group_against_components(&group, &components);
+
+        assert_eq!(validation.status, "error");
+        assert!(validation.issue_count >= 4);
     }
 
     #[test]

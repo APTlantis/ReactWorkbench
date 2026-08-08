@@ -12,6 +12,7 @@ import {
   Loader2,
   Moon,
   Palette,
+  Plus,
   Save,
   Search,
   Sun,
@@ -136,7 +137,34 @@ type CatalogResult = {
   body: string;
 };
 
+type GroupValidation = {
+  status: "ready" | "warning" | "error";
+  issueCount: number;
+  issues: GroupValidationIssue[];
+};
+
+type GroupValidationIssue = {
+  severity: "warning" | "error";
+  title: string;
+  detail: string;
+};
+
 const booleanValue = (value: string | undefined) => value === "true";
+
+const emptyGroupDraft = (): GroupFile => ({
+  group: {
+    id: "",
+    name: "New Component Area",
+    description: "A named area where selected component states belong together.",
+    layout: "row",
+    themes: ["light", "dark", "aurora"],
+  },
+  items: [
+    { component: "badge", state: "soft-info", role: "Status" },
+    { component: "card", state: "comfortable-summary", role: "Summary" },
+    { component: "button", state: "primary-ready", role: "Action" },
+  ],
+});
 
 function App() {
   const [components, setComponents] = useState<ComponentSummary[]>([]);
@@ -164,6 +192,11 @@ function App() {
   const [catalogType, setCatalogType] = useState("all");
   const [catalogResults, setCatalogResults] = useState<CatalogResult[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [isGroupComposerOpen, setIsGroupComposerOpen] = useState(false);
+  const [groupDraft, setGroupDraft] = useState<GroupFile>(() => emptyGroupDraft());
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [groupValidation, setGroupValidation] = useState<GroupValidation | null>(null);
+  const [draftValidation, setDraftValidation] = useState<GroupValidation | null>(null);
 
   useEffect(() => {
     async function boot() {
@@ -191,6 +224,14 @@ function App() {
 
     boot();
   }, []);
+
+  async function refreshGroups() {
+    const groupList = await invoke<GroupSummary[]>("list_groups");
+    const loaded = await Promise.all(groupList.map((item) => invoke<GroupFile>("load_group", { groupId: item.id })));
+    setGroups(groupList);
+    setGroupFiles(Object.fromEntries(loaded.map((item) => [item.group.id, item])));
+    return { groupList, loaded };
+  }
 
   useEffect(() => {
     if (!themes.length) return;
@@ -248,6 +289,41 @@ function App() {
       })
       .catch((caught) => setError(String(caught)));
   }, [selectedGroupId]);
+
+  useEffect(() => {
+    if (!group) return;
+
+    invoke<GroupValidation>("validate_group", { group })
+      .then((validation) => {
+        setGroupValidation(validation);
+        setError(null);
+      })
+      .catch((caught) => setError(String(caught)));
+  }, [group]);
+
+  useEffect(() => {
+    if (!isGroupComposerOpen) return;
+
+    const timeout = window.setTimeout(() => {
+      invoke<GroupValidation>("validate_group", { group: groupDraft })
+        .then((validation) => setDraftValidation(validation))
+        .catch(() =>
+          setDraftValidation({
+            status: "error",
+            issueCount: 1,
+            issues: [
+              {
+                severity: "error",
+                title: "Validation unavailable",
+                detail: "The draft could not be checked against current metadata.",
+              },
+            ],
+          }),
+        );
+    }, 120);
+
+    return () => window.clearTimeout(timeout);
+  }, [groupDraft, isGroupComposerOpen]);
 
   useEffect(() => {
     if (!selectedThemeId) return;
@@ -325,6 +401,42 @@ function App() {
     }
   }
 
+  function startGroupComposer(fromCurrent = false) {
+    if (fromCurrent && group) {
+      setGroupDraft({
+        group: {
+          ...group.group,
+          name: `${group.group.name} Copy`,
+          id: "",
+        },
+        items: group.items.map((item) => ({ ...item })),
+      });
+    } else {
+      setGroupDraft(emptyGroupDraft());
+    }
+
+    setActiveLibrary("groups");
+    setIsGroupBoardOpen(false);
+    setIsCatalogOpen(false);
+    setIsGroupComposerOpen(true);
+    setSaveMessage(null);
+  }
+
+  async function saveGroupDraft() {
+    try {
+      const saved = await invoke<GroupFile>("save_group", { group: groupDraft });
+      await refreshGroups();
+      setSelectedGroupId(saved.group.id);
+      setGroup(saved);
+      setIsGroupComposerOpen(false);
+      setSaveMessage(`Saved ${saved.group.name}`);
+      const environment = await invoke<EnvironmentStatus>("initialize_local_index");
+      setStatus(environment);
+    } catch (caught) {
+      setSaveMessage(String(caught));
+    }
+  }
+
   const activeTitle =
     activeLibrary === "groups" && isGroupBoardOpen
       ? "Group Board"
@@ -378,6 +490,9 @@ function App() {
             type="button"
           >
             <Search size={18} />
+          </button>
+          <button className={`icon-button ${isGroupComposerOpen ? "active" : ""}`} onClick={() => startGroupComposer()} title="New group" type="button">
+            <Plus size={18} />
           </button>
           <StatusPill status={status} />
         </div>
@@ -567,7 +682,17 @@ function App() {
             <Zap size={17} />
             <span>Props</span>
           </div>
-          {isCatalogOpen ? (
+          {isGroupComposerOpen ? (
+            <GroupComposer
+              componentFiles={componentFiles}
+              draft={groupDraft}
+              message={saveMessage}
+              validation={draftValidation}
+              onCancel={() => setIsGroupComposerOpen(false)}
+              onChange={setGroupDraft}
+              onSave={saveGroupDraft}
+            />
+          ) : isCatalogOpen ? (
             <CatalogPanel
               error={catalogError}
               indexReady={Boolean(status?.indexInitialized)}
@@ -581,7 +706,7 @@ function App() {
           ) : activeLibrary === "groups" && isGroupBoardOpen ? (
             <BoardInspector groups={groups} />
           ) : activeLibrary === "groups" && group ? (
-            <GroupInspector group={group} componentFiles={componentFiles} />
+            <GroupInspector group={group} componentFiles={componentFiles} validation={groupValidation} onCopy={() => startGroupComposer(true)} />
           ) : (
             <div className="controls">
               {component?.props.map((prop) => (
@@ -677,16 +802,24 @@ function ThemeTokens({ theme }: { theme: ThemeFile }) {
 function GroupInspector({
   group,
   componentFiles,
+  validation,
+  onCopy,
 }: {
   group: GroupFile;
   componentFiles: Record<string, ComponentFile>;
+  validation: GroupValidation | null;
+  onCopy: () => void;
 }) {
   return (
     <div className="controls">
       <section className="group-summary">
         <strong>{group.group.layout}</strong>
         <p>{group.group.description}</p>
+        <button className="secondary-command" onClick={onCopy} type="button">
+          Copy to New Group
+        </button>
       </section>
+      <ValidationPanel validation={validation} />
       {group.items.map((item) => {
         const component = componentFiles[item.component];
         const state = component?.states.find((candidate) => candidate.id === item.state);
@@ -700,6 +833,166 @@ function GroupInspector({
         );
       })}
     </div>
+  );
+}
+
+function GroupComposer({
+  componentFiles,
+  draft,
+  message,
+  validation,
+  onCancel,
+  onChange,
+  onSave,
+}: {
+  componentFiles: Record<string, ComponentFile>;
+  draft: GroupFile;
+  message: string | null;
+  validation: GroupValidation | null;
+  onCancel: () => void;
+  onChange: (draft: GroupFile) => void;
+  onSave: () => void;
+}) {
+  const componentOptions = Object.values(componentFiles);
+
+  function updateGroup(updates: Partial<GroupFile["group"]>) {
+    onChange({ ...draft, group: { ...draft.group, ...updates } });
+  }
+
+  function updateItem(index: number, updates: Partial<GroupItem>) {
+    onChange({
+      ...draft,
+      items: draft.items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+
+        const next = { ...item, ...updates };
+        if (updates.component) {
+          const component = componentFiles[updates.component];
+          next.state = component?.states[0]?.id ?? "";
+        }
+        return next;
+      }),
+    });
+  }
+
+  function addItem() {
+    const component = componentOptions[0];
+    if (!component) return;
+
+    onChange({
+      ...draft,
+      items: [
+        ...draft.items,
+        {
+          component: component.component.id,
+          state: component.states[0]?.id ?? "",
+          role: "Area Item",
+        },
+      ],
+    });
+  }
+
+  function removeItem(index: number) {
+    onChange({
+      ...draft,
+      items: draft.items.filter((_, itemIndex) => itemIndex !== index),
+    });
+  }
+
+  return (
+    <div className="composer-panel">
+      <label className="field-control">
+        <span>Name</span>
+        <input onChange={(event) => updateGroup({ name: event.currentTarget.value })} type="text" value={draft.group.name} />
+      </label>
+      <label className="field-control">
+        <span>Description</span>
+        <input onChange={(event) => updateGroup({ description: event.currentTarget.value })} type="text" value={draft.group.description} />
+      </label>
+      <label className="field-control">
+        <span>Layout</span>
+        <select onChange={(event) => updateGroup({ layout: event.currentTarget.value as GroupFile["group"]["layout"] })} value={draft.group.layout}>
+          <option value="row">row</option>
+          <option value="grid">grid</option>
+          <option value="stack">stack</option>
+        </select>
+      </label>
+
+      <div className="composer-items">
+        {draft.items.map((item, index) => {
+          const component = componentFiles[item.component];
+
+          return (
+            <section className="composer-item" key={`${index}-${item.component}-${item.state}`}>
+              <label className="field-control">
+                <span>Role</span>
+                <input onChange={(event) => updateItem(index, { role: event.currentTarget.value })} type="text" value={item.role} />
+              </label>
+              <label className="field-control">
+                <span>Component</span>
+                <select onChange={(event) => updateItem(index, { component: event.currentTarget.value })} value={item.component}>
+                  {componentOptions.map((option) => (
+                    <option key={option.component.id} value={option.component.id}>
+                      {option.component.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-control">
+                <span>State</span>
+                <select onChange={(event) => updateItem(index, { state: event.currentTarget.value })} value={item.state}>
+                  {component?.states.map((state) => (
+                    <option key={state.id} value={state.id}>
+                      {state.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="secondary-command" disabled={draft.items.length <= 1} onClick={() => removeItem(index)} type="button">
+                Remove
+              </button>
+            </section>
+          );
+        })}
+      </div>
+
+      <ValidationPanel validation={validation} />
+
+      <div className="composer-actions">
+        <button className="secondary-command" onClick={addItem} type="button">
+          Add Item
+        </button>
+        <button className="secondary-command" onClick={onCancel} type="button">
+          Cancel
+        </button>
+        <button className="primary-command" onClick={onSave} type="button">
+          Save Group
+        </button>
+      </div>
+      {message && <p className="catalog-note">{message}</p>}
+    </div>
+  );
+}
+
+function ValidationPanel({ validation }: { validation: GroupValidation | null }) {
+  if (!validation) {
+    return <p className="catalog-note">Checking group structure...</p>;
+  }
+
+  return (
+    <section className={`validation-panel ${validation.status}`}>
+      <strong>{validation.status === "ready" ? "Ready" : validation.status}</strong>
+      {validation.issueCount === 0 ? (
+        <p>No structural issues found.</p>
+      ) : (
+        validation.issues.map((issue) => (
+          <article className={`validation-issue ${issue.severity}`} key={`${issue.title}-${issue.detail}`}>
+            <span>{issue.title}</span>
+            <p>{issue.detail}</p>
+          </article>
+        ))
+      )}
+    </section>
   );
 }
 

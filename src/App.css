@@ -728,6 +728,130 @@ h2 {
   background: #fff4f1;
 }
 
+.composer-panel {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 10px;
+  max-height: calc(100vh - 270px);
+  overflow: auto;
+}
+
+.composer-items {
+  display: grid;
+  gap: 10px;
+}
+
+.composer-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.composer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.composer-actions .primary-command {
+  grid-column: 1 / -1;
+}
+
+.secondary-command,
+.primary-command {
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.secondary-command {
+  border: 1px solid #cbd5e1;
+  color: #405068;
+  background: #fff;
+}
+
+.secondary-command:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.primary-command {
+  border: 1px solid #0f8b8d;
+  color: #fff;
+  background: #0f8b8d;
+}
+
+.validation-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.validation-panel.ready {
+  border-color: #9fd1bc;
+  background: #f1fbf5;
+}
+
+.validation-panel.warning {
+  border-color: #eccb8b;
+  background: #fff9ec;
+}
+
+.validation-panel.error {
+  border-color: #f0b5ac;
+  background: #fff4f1;
+}
+
+.validation-panel > strong {
+  color: #324056;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.validation-panel > p {
+  margin: 0;
+  color: #52627a;
+  font-size: 0.84rem;
+}
+
+.validation-issue {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.validation-issue span {
+  color: #324056;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.validation-issue p {
+  margin: 0;
+  color: #52627a;
+  font-size: 0.78rem;
+  line-height: 1.32;
+}
+
+.validation-issue.error span {
+  color: #9f342c;
+}
+
+.validation-issue.warning span {
+  color: #8a5b13;
+}
+
 .group-board {
   width: min(100%, 980px);
   display: grid;
