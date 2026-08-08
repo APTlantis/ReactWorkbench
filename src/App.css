@@ -656,6 +656,78 @@ h2 {
   color: #667085;
 }
 
+.catalog-panel {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 10px;
+  max-height: calc(100vh - 270px);
+  overflow: auto;
+}
+
+.catalog-results {
+  display: grid;
+  gap: 8px;
+}
+
+.catalog-result {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  color: #1c2430;
+  background: #fbfcfe;
+  text-align: left;
+}
+
+.catalog-result:hover {
+  border-color: #bfd8db;
+  background: #f4fbfa;
+}
+
+.catalog-result span {
+  color: #0f7476;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.catalog-result strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-result small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #667085;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.catalog-note,
+.catalog-error {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.catalog-note {
+  color: #52627a;
+  background: #f1f5f9;
+}
+
+.catalog-error {
+  color: #8a2f26;
+  background: #fff4f1;
+}
+
 .group-board {
   width: min(100%, 980px);
   display: grid;

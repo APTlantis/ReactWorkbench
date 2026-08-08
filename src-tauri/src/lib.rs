@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -177,7 +178,24 @@ struct EnvironmentStatus {
     ollama_version: Option<String>,
     embedding_model: String,
     index_initialized: bool,
+    indexed_record_count: usize,
     message: String,
+}
+
+struct IndexRecord {
+    id: String,
+    record_type: String,
+    title: String,
+    body: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IndexSearchResult {
+    id: String,
+    record_type: String,
+    title: String,
+    body: String,
 }
 
 #[tauri::command]
@@ -222,6 +240,26 @@ fn load_group(app: AppHandle, group_id: String) -> Result<GroupFile, String> {
 }
 
 #[tauri::command]
+fn save_group(app: AppHandle, group: GroupFile) -> Result<GroupFile, String> {
+    let mut group = group;
+    group.group.id = slugify(&group.group.name);
+    if group.group.id.is_empty() {
+        return Err("Group name must contain at least one letter or number.".to_string());
+    }
+
+    let dir = writable_metadata_dir(&app).join("groups");
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not create group metadata directory {}: {error}", dir.display()))?;
+    let path = dir.join(format!("{}.toml", group.group.id));
+    let toml = toml::to_string_pretty(&group)
+        .map_err(|error| format!("Could not serialize group metadata: {error}"))?;
+    fs::write(&path, toml)
+        .map_err(|error| format!("Could not save group metadata {}: {error}", path.display()))?;
+
+    Ok(group)
+}
+
+#[tauri::command]
 fn list_themes(app: AppHandle) -> Result<Vec<ThemeSummary>, String> {
     let themes = read_all_themes(&app)?;
     Ok(themes
@@ -260,6 +298,7 @@ fn initialize_local_index(app: AppHandle) -> Result<EnvironmentStatus, String> {
     let duckdb = command_version("duckdb", "-version");
     let ollama = command_version("ollama", "-v");
     let mut index_initialized = false;
+    let mut indexed_record_count = 0;
     let mut message = String::from("File metadata is available.");
 
     if duckdb.available {
@@ -274,12 +313,18 @@ fn initialize_local_index(app: AppHandle) -> Result<EnvironmentStatus, String> {
             )
         })?;
         let database = app_data.join("theme-preview.duckdb");
-        let sql = "CREATE TABLE IF NOT EXISTS indexed_records (id VARCHAR PRIMARY KEY, record_type VARCHAR, title VARCHAR, body VARCHAR, embedding_model VARCHAR, updated_at TIMESTAMP DEFAULT current_timestamp);";
-        let output = Command::new("duckdb").arg(&database).arg("-c").arg(sql).output();
+        let records = build_index_records(&app)?;
+        indexed_record_count = records.len();
+        let sql_path = app_data.join("rebuild-index.sql");
+        write_index_sql(&sql_path, &records)?;
+        let output = Command::new("duckdb").arg(&database).arg("-f").arg(&sql_path).output();
         match output {
             Ok(result) if result.status.success() => {
                 index_initialized = true;
-                message = format!("DuckDB index initialized at {}.", database.display());
+                message = format!(
+                    "DuckDB indexed {indexed_record_count} records at {}.",
+                    database.display()
+                );
             }
             Ok(result) => {
                 message = String::from_utf8_lossy(&result.stderr).trim().to_string();
@@ -300,8 +345,171 @@ fn initialize_local_index(app: AppHandle) -> Result<EnvironmentStatus, String> {
         ollama_version: ollama.version,
         embedding_model: "snowflake-arctic-embed:latest".to_string(),
         index_initialized,
+        indexed_record_count,
         message,
     })
+}
+
+#[tauri::command]
+fn search_index(
+    app: AppHandle,
+    query: String,
+    record_type: Option<String>,
+) -> Result<Vec<IndexSearchResult>, String> {
+    let duckdb = command_version("duckdb", "-version");
+    if !duckdb.available {
+        return Err("DuckDB is not available, so the local catalog cannot be searched.".to_string());
+    }
+
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve app data directory: {error}"))?;
+    let database = app_data.join("theme-preview.duckdb");
+
+    if !database.exists() {
+        return Err("The local catalog has not been initialized yet.".to_string());
+    }
+
+    let query = query.trim().to_lowercase();
+    let type_filter = record_type.unwrap_or_else(|| "all".to_string());
+    let mut sql = String::from(
+        "SELECT id, record_type AS recordType, title, body FROM indexed_records WHERE 1 = 1",
+    );
+
+    if !query.is_empty() {
+        sql.push_str(&format!(
+            " AND lower(title || ' ' || body) LIKE '%{}%'",
+            sql_escape(&query)
+        ));
+    }
+
+    if type_filter != "all" {
+        sql.push_str(&format!(" AND record_type = '{}'", sql_escape(&type_filter)));
+    }
+
+    sql.push_str(" ORDER BY record_type, title LIMIT 50;");
+
+    let output = Command::new("duckdb")
+        .arg(&database)
+        .arg("-json")
+        .arg("-c")
+        .arg(sql)
+        .output()
+        .map_err(|error| format!("Could not search DuckDB catalog: {error}"))?;
+
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if message.is_empty() {
+            "DuckDB catalog search failed.".to_string()
+        } else {
+            message
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    serde_json::from_str::<Vec<IndexSearchResult>>(&stdout)
+        .map_err(|error| format!("Could not parse DuckDB catalog results: {error}"))
+}
+
+fn build_index_records(app: &AppHandle) -> Result<Vec<IndexRecord>, String> {
+    let mut records = Vec::new();
+
+    for component in read_all_components(app)? {
+        let prop_names = component
+            .props
+            .iter()
+            .map(|prop| format!("{}:{}", prop.id, prop.kind))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let state_names = component
+            .states
+            .iter()
+            .map(|state| state.label.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        records.push(IndexRecord {
+            id: format!("component:{}", component.component.id),
+            record_type: "component".to_string(),
+            title: component.component.name,
+            body: format!(
+                "{} Props: {prop_names}. States: {state_names}. Themes: {}.",
+                component.component.description,
+                component.component.themes.join(", ")
+            ),
+        });
+    }
+
+    for theme in read_all_themes(app)? {
+        records.push(IndexRecord {
+            id: format!("theme:{}", theme.theme.id),
+            record_type: "theme".to_string(),
+            title: theme.theme.name,
+            body: format!(
+                "{} Primary {} surface {} text {} density {}.",
+                theme.theme.description,
+                theme.colors.primary,
+                theme.colors.surface,
+                theme.colors.text,
+                theme.spacing.density
+            ),
+        });
+    }
+
+    for group in read_all_groups(app)? {
+        let items = group
+            .items
+            .iter()
+            .map(|item| format!("{} uses {}:{}", item.role, item.component, item.state))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        records.push(IndexRecord {
+            id: format!("group:{}", group.group.id),
+            record_type: "group".to_string(),
+            title: group.group.name,
+            body: format!(
+                "{} Layout: {}. Items: {items}. Themes: {}.",
+                group.group.description,
+                group.group.layout,
+                group.group.themes.join(", ")
+            ),
+        });
+    }
+
+    Ok(records)
+}
+
+fn write_index_sql(path: &Path, records: &[IndexRecord]) -> Result<(), String> {
+    let mut file = fs::File::create(path)
+        .map_err(|error| format!("Could not create index SQL {}: {error}", path.display()))?;
+
+    writeln!(
+        file,
+        "CREATE TABLE IF NOT EXISTS indexed_records (id VARCHAR PRIMARY KEY, record_type VARCHAR, title VARCHAR, body VARCHAR, embedding_model VARCHAR, updated_at TIMESTAMP DEFAULT current_timestamp);"
+    )
+    .map_err(|error| format!("Could not write index SQL {}: {error}", path.display()))?;
+    writeln!(file, "DELETE FROM indexed_records;")
+        .map_err(|error| format!("Could not write index SQL {}: {error}", path.display()))?;
+
+    for record in records {
+        writeln!(
+            file,
+            "INSERT INTO indexed_records (id, record_type, title, body, embedding_model) VALUES ('{}', '{}', '{}', '{}', 'snowflake-arctic-embed:latest');",
+            sql_escape(&record.id),
+            sql_escape(&record.record_type),
+            sql_escape(&record.title),
+            sql_escape(&record.body)
+        )
+        .map_err(|error| format!("Could not write index SQL {}: {error}", path.display()))?;
+    }
+
+    Ok(())
+}
+
+fn sql_escape(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 fn read_all_components(app: &AppHandle) -> Result<Vec<ComponentFile>, String> {
@@ -361,6 +569,39 @@ fn metadata_dir(app: &AppHandle) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("metadata"))
 }
 
+fn writable_metadata_dir(app: &AppHandle) -> PathBuf {
+    if let Ok(current_dir) = std::env::current_dir() {
+        let candidate = current_dir.join("metadata");
+        if candidate.is_dir() {
+            return candidate;
+        }
+
+        let candidate = current_dir.join("..").join("metadata");
+        if candidate.is_dir() {
+            return candidate;
+        }
+    }
+
+    metadata_dir(app)
+}
+
+fn slugify(value: &str) -> String {
+    let mut output = String::new();
+    let mut last_was_dash = false;
+
+    for character in value.chars().flat_map(char::to_lowercase) {
+        if character.is_ascii_alphanumeric() {
+            output.push(character);
+            last_was_dash = false;
+        } else if !last_was_dash && !output.is_empty() {
+            output.push('-');
+            last_was_dash = true;
+        }
+    }
+
+    output.trim_end_matches('-').to_string()
+}
+
 struct CommandStatus {
     available: bool,
     version: Option<String>,
@@ -393,10 +634,12 @@ pub fn run() {
             load_component,
             list_groups,
             load_group,
+            save_group,
             list_themes,
             load_theme,
             save_preview_selection,
-            initialize_local_index
+            initialize_local_index,
+            search_index
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -444,6 +687,17 @@ mod tests {
         assert_eq!(groups.len(), 3);
         assert!(groups.iter().all(|group| !group.items.is_empty()));
         assert!(groups.iter().all(|group| !group.group.layout.is_empty()));
+    }
+
+    #[test]
+    fn index_sql_escapes_quotes() {
+        assert_eq!(sql_escape("Button's state"), "Button''s state");
+    }
+
+    #[test]
+    fn group_names_slugify_to_file_ids() {
+        assert_eq!(slugify("Settings Row!"), "settings-row");
+        assert_eq!(slugify("  Danger   Zone  "), "danger-zone");
     }
 
     #[test]

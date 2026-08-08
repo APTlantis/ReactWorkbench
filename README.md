@@ -12,6 +12,10 @@ The first slice is intentionally deterministic: the user defines components, pro
 
 The app can preview one component, one group, compare themes, or open a group board that shows all defined areas at once. This is the first step toward browsing larger sets of valid component combinations without asking the app to invent them.
 
+When DuckDB is available, the app rebuilds a derived local index on startup with one searchable record per component, theme, and group. The TOML files remain canonical; DuckDB is a local catalog/cache layer for later search and embedding workflows.
+
+The Catalog search button queries that DuckDB index and can jump directly to a matching component, group, or theme. This is intentionally simple text search for now; the same record shape is prepared for later embedding-backed similarity.
+
 This template should help get you started developing with Tauri, React and Typescript in Vite.
 
 ## Recommended IDE Setup

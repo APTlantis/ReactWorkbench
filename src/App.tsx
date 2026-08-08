@@ -125,7 +125,15 @@ type EnvironmentStatus = {
   ollamaVersion?: string;
   embeddingModel: string;
   indexInitialized: boolean;
+  indexedRecordCount: number;
   message: string;
+};
+
+type CatalogResult = {
+  id: string;
+  recordType: "component" | "theme" | "group";
+  title: string;
+  body: string;
 };
 
 const booleanValue = (value: string | undefined) => value === "true";
@@ -151,6 +159,11 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isComparingThemes, setIsComparingThemes] = useState(false);
   const [isGroupBoardOpen, setIsGroupBoardOpen] = useState(false);
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogType, setCatalogType] = useState("all");
+  const [catalogResults, setCatalogResults] = useState<CatalogResult[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
   useEffect(() => {
     async function boot() {
@@ -259,6 +272,27 @@ function App() {
     }).catch(() => undefined);
   }, [component, theme, propValues]);
 
+  useEffect(() => {
+    if (!isCatalogOpen || !status?.indexInitialized) return;
+
+    const timeout = window.setTimeout(() => {
+      invoke<CatalogResult[]>("search_index", {
+        query: catalogQuery,
+        recordType: catalogType,
+      })
+        .then((results) => {
+          setCatalogResults(results);
+          setCatalogError(null);
+        })
+        .catch((caught) => {
+          setCatalogResults([]);
+          setCatalogError(String(caught));
+        });
+    }, 140);
+
+    return () => window.clearTimeout(timeout);
+  }, [catalogQuery, catalogType, isCatalogOpen, status?.indexInitialized]);
+
   const themeVars = useMemo(() => (theme ? themeStyle(theme) : {}), [theme]);
 
   function applyState(state: ComponentState) {
@@ -269,6 +303,26 @@ function App() {
   function updateProp(id: string, value: string) {
     setSelectedStateId(null);
     setPropValues((current) => ({ ...current, [id]: value }));
+  }
+
+  function openCatalogResult(result: CatalogResult) {
+    const [, id] = result.id.split(":");
+
+    if (result.recordType === "component") {
+      setActiveLibrary("components");
+      setSelectedComponentId(id);
+      setIsGroupBoardOpen(false);
+    }
+
+    if (result.recordType === "group") {
+      setActiveLibrary("groups");
+      setSelectedGroupId(id);
+      setIsGroupBoardOpen(false);
+    }
+
+    if (result.recordType === "theme") {
+      setSelectedThemeId(id);
+    }
   }
 
   const activeTitle =
@@ -316,6 +370,14 @@ function App() {
             type="button"
           >
             <LayoutDashboard size={18} />
+          </button>
+          <button
+            className={`icon-button ${isCatalogOpen ? "active" : ""}`}
+            onClick={() => setIsCatalogOpen((current) => !current)}
+            title="Catalog search"
+            type="button"
+          >
+            <Search size={18} />
           </button>
           <StatusPill status={status} />
         </div>
@@ -505,7 +567,18 @@ function App() {
             <Zap size={17} />
             <span>Props</span>
           </div>
-          {activeLibrary === "groups" && isGroupBoardOpen ? (
+          {isCatalogOpen ? (
+            <CatalogPanel
+              error={catalogError}
+              indexReady={Boolean(status?.indexInitialized)}
+              query={catalogQuery}
+              results={catalogResults}
+              type={catalogType}
+              onOpen={openCatalogResult}
+              onQueryChange={setCatalogQuery}
+              onTypeChange={setCatalogType}
+            />
+          ) : activeLibrary === "groups" && isGroupBoardOpen ? (
             <BoardInspector groups={groups} />
           ) : activeLibrary === "groups" && group ? (
             <GroupInspector group={group} componentFiles={componentFiles} />
@@ -566,7 +639,7 @@ function StatusPill({ status }: { status: EnvironmentStatus | null }) {
   return (
     <div className={status.indexInitialized ? "status-pill ready" : "status-pill muted"} title={runtimeTitle(status)}>
       {status.indexInitialized ? <Database size={16} /> : <FileCode2 size={16} />}
-      <span>{status.indexInitialized ? "DuckDB" : "Files"}</span>
+      <span>{status.indexInitialized ? `${status.indexedRecordCount} indexed` : "Files"}</span>
       <small>{status.ollamaAvailable ? "Embeddings ready" : "No embeddings"}</small>
     </div>
   );
@@ -650,6 +723,62 @@ function BoardInspector({ groups }: { groups: GroupSummary[] }) {
         <strong>{layouts}</strong>
         <small>Defined in TOML</small>
       </section>
+    </div>
+  );
+}
+
+function CatalogPanel({
+  error,
+  indexReady,
+  query,
+  results,
+  type,
+  onOpen,
+  onQueryChange,
+  onTypeChange,
+}: {
+  error: string | null;
+  indexReady: boolean;
+  query: string;
+  results: CatalogResult[];
+  type: string;
+  onOpen: (result: CatalogResult) => void;
+  onQueryChange: (query: string) => void;
+  onTypeChange: (type: string) => void;
+}) {
+  return (
+    <div className="catalog-panel">
+      <label className="field-control">
+        <span>Search</span>
+        <input
+          disabled={!indexReady}
+          onChange={(event) => onQueryChange(event.currentTarget.value)}
+          placeholder="button, danger, dashboard..."
+          type="text"
+          value={query}
+        />
+      </label>
+      <label className="field-control">
+        <span>Type</span>
+        <select disabled={!indexReady} onChange={(event) => onTypeChange(event.currentTarget.value)} value={type}>
+          <option value="all">all</option>
+          <option value="component">components</option>
+          <option value="group">groups</option>
+          <option value="theme">themes</option>
+        </select>
+      </label>
+      {!indexReady && <p className="catalog-note">DuckDB is not ready, so the catalog is using file previews only.</p>}
+      {error && <p className="catalog-error">{error}</p>}
+      <div className="catalog-results">
+        {results.map((result) => (
+          <button className="catalog-result" key={result.id} onClick={() => onOpen(result)} type="button">
+            <span>{result.recordType}</span>
+            <strong>{result.title}</strong>
+            <small>{result.body}</small>
+          </button>
+        ))}
+        {indexReady && !results.length && !error && <p className="catalog-note">No matching catalog records.</p>}
+      </div>
     </div>
   );
 }
