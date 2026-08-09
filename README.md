@@ -12,16 +12,20 @@ The app is not trying to be a drag-and-drop page editor. It is a deterministic p
 - Previews one component and its named states, including buttons, cards, badges, inputs, and toggles.
 - Switches themes and compares themes.
 - Shows a board of all defined groups.
+- Surfaces duplicate saved group structures in the group board, matching board cards, and group inspector, with a persisted board filter for duplicate structures.
 - Lets you compose and save new groups from inside the app.
 - Validates groups against known components and states.
+- Shows explicit review state when group drafts have validation warnings.
 - Runs deterministic preview checks for visible copy, theme contrast, empty groups, and unresolved group references.
 - Builds a local DuckDB catalog when DuckDB is available.
 - Searches the local catalog for components, groups, and themes.
-- Smoke-tests the browser preview for blank renders, horizontal clipping, unmanaged text overflow, and tiny controls.
+- Smoke-tests the browser preview for blank renders, horizontal, vertical, and child-content clipping, unmanaged text overflow, tiny controls, computed text contrast, and screenshot report review-source messages.
 - Exports browser-rendered component and group preview screenshots for every theme.
-- Shows the latest screenshot comparison summary inside the desktop inspector, with actions to open generated report files, inspect individual changed previews, mark items accepted or dismissed locally, export those decisions beside the report, and load exported decisions in later sessions.
+- Shows recent screenshot comparison summaries inside the desktop inspector, with actions to open generated report files, revisit recent comparisons, scan per-theme and per-kind report totals, jump from totals into focused filter slices, filter review items by status, theme, and preview kind, see filtered item counts, reopen each report with its last filter focus, reset filters quickly, inspect individual changed previews, show an empty review summary when no items need review, mark items accepted or dismissed locally, clear stale local decisions, show a final reviewed status, export those decisions beside the report, distinguish local browser decisions from exported decisions, and distinguish current or stale exported decisions loaded in later sessions.
 
 The TOML files are the source of truth. DuckDB is a derived local catalog/cache for search and future embedding workflows.
+
+The seeded `metadata/groups/settings-row.toml` and `metadata/groups/settings-review-row.toml` files intentionally share the same `row` layout and ordered `badge:soft-info`, `card:compact-warning`, `button:secondary-disabled` item sequence. They are fixture data for duplicate-structure surfacing, duplicate-only board filtering, similar-group inspector copy, jump targets, and verification output.
 
 ## Running
 
@@ -58,11 +62,15 @@ To compare the latest export against its matching metadata snapshot, or against 
 npm run compare:screenshots
 npm run compare:screenshots -- 69b0c577a9be
 npm run compare:screenshots:strict
+npm run test:compare
+npm run verify
 ```
 
 Comparison reports are written to `artifacts/previews/reports` as JSON, HTML, and Markdown. The HTML report shows an all-clear, tolerated-drift, or needs-review status, links back to the raw JSON, and includes browser-local review notes on each review card. The Markdown report gives the same review summary in a pull-request-friendly format. Non-empty notes can be exported from the HTML report as a small JSON file. When a preview image changes, a pink-highlighted `.diff.png` is written beside the report under `artifacts/previews/reports/<baseline>-to-<latest>`.
 
-Use `npm run compare:screenshots:strict` for CI or release checks. It writes the same reports, then exits with a failing status when added, removed, or changed previews need review. Tolerated differences still pass when they are within the configured threshold.
+Use `npm run compare:screenshots:strict` for CI or release checks. It writes the same reports, then exits with a failing status when added, removed, or changed previews need review. Tolerated differences still pass when they are within the configured threshold. If a sibling `<baseline>-to-<latest>.review.json` file exists, strict mode treats blocking items marked `accepted` as reviewed and still fails on dismissed or unresolved items. Generated JSON, HTML, and Markdown reports include review-decision coverage so stale or partial decisions are visible.
+
+Use `npm run verify` to run the local verification pass: build, compare fixture tests, strict screenshot comparison, Rust/Tauri tests, a temporary Vite preview server, and the browser smoke check. It ends with a concise checklist summary, including visual smoke totals from the generated smoke artifact.
 
 By default, any pixel difference is reported as changed. To tolerate tiny render drift, set `PIXEL_DIFF_THRESHOLD` to a changed-pixel ratio:
 

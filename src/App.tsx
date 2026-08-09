@@ -19,6 +19,7 @@ import {
   Palette,
   Pencil,
   Plus,
+  RotateCcw,
   Save,
   Search,
   ShieldCheck,
@@ -26,6 +27,40 @@ import {
   SwatchBook,
   Zap,
 } from "lucide-react";
+import {
+  duplicateGroupBadgeLabel,
+  duplicateGroupBoardCountCopy,
+  duplicateGroupBoardFilterCopy,
+  duplicateGroupFindingSummary,
+  duplicateGroupJumpTargets,
+  duplicateGroupPanelCopy,
+  filterDuplicateGroupSummaries,
+  findDuplicateGroups,
+  parseDuplicateBoardFilter,
+  type DuplicateGroupFinding,
+  type DuplicateGroupPanelMode,
+} from "./group-duplicates";
+import {
+  emptyReviewProgressCopy,
+  filterReportReviewItems,
+  loadedReviewDecisionMessage,
+  loadedReviewDecisionSummary,
+  normalizeReportFilters,
+  parseReportFilters,
+  parseStoredReviewDecisionResult,
+  pruneReviewDecisions,
+  reviewDecisionSourceMessage,
+  reviewDecisionSourceSummary,
+  reviewDecisionExportPayload,
+  reviewItemKey,
+  reviewedReportStatus,
+  reportReviewTotals,
+  staleLocalDecisionActionLabel,
+  storedReviewDecisionWarningMessage,
+  uniqueReportValues,
+  type ReviewDecision,
+  type ReportReviewFilters,
+} from "./report-review";
 import "./App.css";
 
 type ComponentSummary = {
@@ -291,12 +326,78 @@ async function browserInvoke<T>(command: string, args: InvokeArgs): Promise<T> {
     case "search_index":
       return searchBrowserIndex(String(args.query ?? ""), String(args.recordType ?? "all")) as T;
     case "latest_screenshot_report":
-      return null as T;
+      return browserScreenshotReportFixture() as T;
+    case "recent_screenshot_reports":
+      return [browserScreenshotReportFixture()] as T;
     case "export_screenshot_review_decisions":
       throw new Error("Review decision export is available in the desktop app.");
     default:
       throw new Error(`Browser preview does not support command: ${command}`);
   }
+}
+
+function browserScreenshotReportFixture(): ScreenshotReportSummary {
+  return {
+    reportPath: "browser://reports/smoke-source.json",
+    htmlReportPath: "browser://reports/smoke-source.html",
+    markdownReportPath: "browser://reports/smoke-source.md",
+    comparedAt: "2026-08-09T00:00:00.000Z",
+    baselineSnapshotId: "smoke-base",
+    latestSnapshotId: "smoke-latest",
+    baselineDir: "browser://previews/smoke-base",
+    latestDir: "browser://previews/smoke-latest",
+    status: "review",
+    statusTitle: "Needs review",
+    statusDetail: "Browser smoke fixture includes review items.",
+    thresholds: {
+      pixelColorDistance: 0,
+      pixelDiffRatio: 0,
+    },
+    summary: {
+      added: 1,
+      removed: 0,
+      changed: 1,
+      tolerated: 0,
+      unchanged: 37,
+      totalCompared: 39,
+      changedPixels: 24,
+      toleratedPixels: 0,
+    },
+    reviewItems: [
+      {
+        status: "changed",
+        theme: "light",
+        kind: "components",
+        name: "Button / Primary",
+        relativePath: "light/components/button-primary.png",
+        previewPath: null,
+        baselinePath: null,
+        latestPath: null,
+        diffPath: null,
+        changedPixels: 24,
+        changedRatio: 0.001,
+      },
+      {
+        status: "added",
+        theme: "dark",
+        kind: "groups",
+        name: "Settings Row",
+        relativePath: "dark/groups/settings-row.png",
+        previewPath: null,
+        baselinePath: null,
+        latestPath: null,
+        diffPath: null,
+        changedPixels: null,
+        changedRatio: null,
+      },
+    ],
+    reviewDecisions: [
+      {
+        key: "changed:light/components/button-primary.png",
+        decision: "accepted",
+      },
+    ],
+  };
 }
 
 function listBrowserComponents(): ComponentSummary[] {
@@ -644,11 +745,14 @@ function App() {
   const [isGroupBoardOpen, setIsGroupBoardOpen] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [showDuplicateGroupsOnly, setShowDuplicateGroupsOnly] = useState(() => readDuplicateBoardFilter());
+  const [highlightedBoardGroupId, setHighlightedBoardGroupId] = useState<string | null>(null);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogType, setCatalogType] = useState("all");
   const [catalogResults, setCatalogResults] = useState<CatalogResult[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [screenshotReport, setScreenshotReport] = useState<ScreenshotReportSummary | null>(null);
+  const [screenshotReports, setScreenshotReports] = useState<ScreenshotReportSummary[]>([]);
   const [screenshotReportError, setScreenshotReportError] = useState<string | null>(null);
   const [isGroupComposerOpen, setIsGroupComposerOpen] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -661,12 +765,13 @@ function App() {
   useEffect(() => {
     async function boot() {
       try {
-        const [componentList, groupList, themeList, environment, latestReport] = await Promise.all([
+        const [componentList, groupList, themeList, environment, latestReport, recentReports] = await Promise.all([
           invoke<ComponentSummary[]>("list_components"),
           invoke<GroupSummary[]>("list_groups"),
           invoke<ThemeSummary[]>("list_themes"),
           invoke<EnvironmentStatus>("initialize_local_index"),
           invoke<ScreenshotReportSummary | null>("latest_screenshot_report"),
+          invoke<ScreenshotReportSummary[]>("recent_screenshot_reports", { limit: 5 }),
         ]);
 
         setComponents(componentList);
@@ -674,6 +779,7 @@ function App() {
         setThemes(themeList);
         setStatus(environment);
         setScreenshotReport(latestReport);
+        setScreenshotReports(recentReports);
         setSelectedComponentId(componentList[0]?.id ?? "button");
         setSelectedGroupId(groupList[0]?.id ?? "settings-row");
         setSelectedThemeId(themeList[0]?.id ?? "light");
@@ -705,6 +811,17 @@ function App() {
       })
       .catch((caught) => setError(String(caught)));
   }, [themes]);
+
+  useEffect(() => {
+    window.localStorage.setItem(duplicateBoardFilterStorageKey(), String(showDuplicateGroupsOnly));
+  }, [showDuplicateGroupsOnly]);
+
+  useEffect(() => {
+    if (!highlightedBoardGroupId) return;
+
+    const timeout = window.setTimeout(() => setHighlightedBoardGroupId(null), 1400);
+    return () => window.clearTimeout(timeout);
+  }, [highlightedBoardGroupId]);
 
   useEffect(() => {
     if (!selectedComponentId) return;
@@ -856,6 +973,7 @@ function App() {
       }),
     [activeLibrary, component, group, groupValidation, isGroupBoardOpen, propValues, theme],
   );
+  const duplicateGroups = useMemo(() => findDuplicateGroups(groupFiles), [groupFiles]);
 
   function applyState(state: ComponentState) {
     setSelectedStateId(state.id);
@@ -887,6 +1005,17 @@ function App() {
     if (result.recordType === "theme") {
       setSelectedThemeId(id);
     }
+  }
+
+  function jumpToBoardGroup(groupId: string) {
+    setHighlightedBoardGroupId(groupId);
+    window.requestAnimationFrame(() => {
+      document.getElementById(boardGroupCardDomId(groupId))?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+    });
   }
 
   function startGroupComposer(mode: "new" | "copy" | "edit" = "new") {
@@ -922,11 +1051,16 @@ function App() {
     setIsGroupComposerOpen(false);
 
     try {
-      const latestReport = await invoke<ScreenshotReportSummary | null>("latest_screenshot_report");
+      const [latestReport, recentReports] = await Promise.all([
+        invoke<ScreenshotReportSummary | null>("latest_screenshot_report"),
+        invoke<ScreenshotReportSummary[]>("recent_screenshot_reports", { limit: 5 }),
+      ]);
       setScreenshotReport(latestReport);
+      setScreenshotReports(recentReports);
       setScreenshotReportError(null);
     } catch (caught) {
       setScreenshotReport(null);
+      setScreenshotReports([]);
       setScreenshotReportError(String(caught));
     }
   }
@@ -1126,9 +1260,13 @@ function App() {
           <div className="canvas">
             {activeLibrary === "groups" && isGroupBoardOpen ? (
               <GroupBoard
+                duplicateGroups={duplicateGroups}
                 groups={groups}
                 groupFiles={groupFiles}
                 componentFiles={componentFiles}
+                highlightedGroupId={highlightedBoardGroupId}
+                showDuplicatesOnly={showDuplicateGroupsOnly}
+                onShowDuplicatesOnlyChange={setShowDuplicateGroupsOnly}
                 onSelect={(groupId) => {
                   setSelectedGroupId(groupId);
                   setIsGroupBoardOpen(false);
@@ -1260,11 +1398,23 @@ function App() {
               onTypeChange={setCatalogType}
             />
           ) : isReportOpen ? (
-            <ScreenshotReportPanel error={screenshotReportError} report={screenshotReport} />
+            <ScreenshotReportPanel
+              error={screenshotReportError}
+              report={screenshotReport}
+              reports={screenshotReports}
+              onSelectReport={setScreenshotReport}
+            />
           ) : activeLibrary === "groups" && isGroupBoardOpen ? (
-            <BoardInspector groups={groups} />
+            <BoardInspector
+              duplicateGroups={duplicateGroups}
+              groups={groups}
+              onJumpToGroup={jumpToBoardGroup}
+              onShowDuplicatesOnlyChange={setShowDuplicateGroupsOnly}
+              showDuplicatesOnly={showDuplicateGroupsOnly}
+            />
           ) : activeLibrary === "groups" && group ? (
             <GroupInspector
+              duplicateGroups={duplicateGroups.filter((finding) => finding.groupIds.includes(group.group.id))}
               group={group}
               componentFiles={componentFiles}
               validation={groupValidation}
@@ -1399,6 +1549,7 @@ function ThemeTokens({ theme }: { theme: ThemeFile }) {
 }
 
 function GroupInspector({
+  duplicateGroups,
   group,
   componentFiles,
   validation,
@@ -1406,6 +1557,7 @@ function GroupInspector({
   onCopy,
   onEdit,
 }: {
+  duplicateGroups: DuplicateGroupFinding[];
   group: GroupFile;
   componentFiles: Record<string, ComponentFile>;
   validation: GroupValidation | null;
@@ -1427,6 +1579,7 @@ function GroupInspector({
           Copy to New Group
         </button>
       </section>
+      <DuplicateGroupPanel findings={duplicateGroups} mode="selected" />
       <ValidationPanel validation={validation} />
       <VisualCheckPanel checks={visualChecks} />
       {group.items.map((item) => {
@@ -1612,6 +1765,7 @@ function GroupComposer({
       </div>
 
       <ValidationPanel validation={validation} />
+      <WarningReviewPanel hasReviewedWarnings={hasReviewedWarnings} validation={validation} />
 
       <div className="composer-actions">
         <button className="secondary-command" onClick={addItem} type="button">
@@ -1626,6 +1780,23 @@ function GroupComposer({
       </div>
       {message && <p className={message.includes("Resolve") || message.includes("already exists") ? "catalog-error" : "catalog-note"}>{message}</p>}
     </div>
+  );
+}
+
+function WarningReviewPanel({ hasReviewedWarnings, validation }: { hasReviewedWarnings: boolean; validation: GroupValidation | null }) {
+  const warningCount = validation?.issues.filter((issue) => issue.severity === "warning").length ?? 0;
+  if (!warningCount) return null;
+
+  return (
+    <section className={`warning-review-panel ${hasReviewedWarnings ? "ready" : "warning"}`}>
+      <strong>{hasReviewedWarnings ? "Warnings Accepted" : "Warning Review Required"}</strong>
+      <p>
+        {hasReviewedWarnings
+          ? `${warningCount} ${warningCount === 1 ? "warning has" : "warnings have"} been accepted for this draft.`
+          : `${warningCount} ${warningCount === 1 ? "warning needs" : "warnings need"} review before this draft can be saved.`}
+      </p>
+      {!hasReviewedWarnings && <small>Use Review Warnings to acknowledge them, then save again.</small>}
+    </section>
   );
 }
 
@@ -1825,9 +1996,23 @@ function VisualCheckPanel({ checks }: { checks: VisualCheck[] }) {
   );
 }
 
-function BoardInspector({ groups }: { groups: GroupSummary[] }) {
+function BoardInspector({
+  duplicateGroups,
+  groups,
+  onJumpToGroup,
+  onShowDuplicatesOnlyChange,
+  showDuplicatesOnly,
+}: {
+  duplicateGroups: DuplicateGroupFinding[];
+  groups: GroupSummary[];
+  onJumpToGroup: (groupId: string) => void;
+  onShowDuplicatesOnlyChange: (showDuplicatesOnly: boolean) => void;
+  showDuplicatesOnly: boolean;
+}) {
   const itemCount = groups.reduce((total, group) => total + group.itemCount, 0);
   const layouts = Array.from(new Set(groups.map((group) => group.layout))).join(", ");
+  const duplicateSummary = duplicateGroupBoardCountCopy(duplicateGroups);
+  const filterSummary = duplicateGroupBoardFilterCopy(groups, duplicateGroups, showDuplicatesOnly);
 
   return (
     <div className="controls">
@@ -1840,12 +2025,65 @@ function BoardInspector({ groups }: { groups: GroupSummary[] }) {
         <strong>{groups.length}</strong>
         <small>{itemCount} component placements</small>
       </section>
+      <section className={`group-item-card duplicate-count ${duplicateSummary.status}`}>
+        <span>Duplicate Structures</span>
+        <strong>{duplicateSummary.duplicateStructureCount}</strong>
+        <small>{duplicateSummary.detail}</small>
+      </section>
+      <section className={`group-item-card duplicate-filter ${filterSummary.status}`}>
+        <span>Board Filter</span>
+        <strong>{filterSummary.title}</strong>
+        <small>{filterSummary.detail}</small>
+        {filterSummary.canReset && (
+          <button className="secondary-command" onClick={() => onShowDuplicatesOnlyChange(false)} type="button">
+            {filterSummary.resetLabel}
+          </button>
+        )}
+      </section>
       <section className="group-item-card">
         <span>Layouts</span>
         <strong>{layouts}</strong>
         <small>Defined in TOML</small>
       </section>
+      <DuplicateGroupPanel findings={duplicateGroups} mode="board" onJumpToGroup={onJumpToGroup} />
     </div>
+  );
+}
+
+function DuplicateGroupPanel({
+  findings,
+  mode,
+  onJumpToGroup,
+}: {
+  findings: DuplicateGroupFinding[];
+  mode: DuplicateGroupPanelMode;
+  onJumpToGroup?: (groupId: string) => void;
+}) {
+  const copy = duplicateGroupPanelCopy(findings, mode);
+
+  return (
+    <section className={`duplicate-panel ${copy.status}`}>
+      <strong>{copy.title}</strong>
+      {findings.length ? (
+        findings.map((finding) => (
+          <article className="duplicate-finding" key={finding.signature}>
+            <span>{finding.names.join(", ")}</span>
+            <p>{duplicateGroupFindingSummary(finding)}</p>
+            {onJumpToGroup && (
+              <div className="duplicate-jumps">
+                {duplicateGroupJumpTargets(finding).map((target) => (
+                  <button key={target.groupId} onClick={() => onJumpToGroup(target.groupId)} type="button">
+                    {target.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </article>
+        ))
+      ) : (
+        <p>{copy.emptyMessage}</p>
+      )}
+    </section>
   );
 }
 
@@ -1905,26 +2143,76 @@ function CatalogPanel({
   );
 }
 
-function ScreenshotReportPanel({ error, report }: { error: string | null; report: ScreenshotReportSummary | null }) {
+function ScreenshotReportPanel({
+  error,
+  report,
+  reports,
+  onSelectReport,
+}: {
+  error: string | null;
+  report: ScreenshotReportSummary | null;
+  reports: ScreenshotReportSummary[];
+  onSelectReport: (report: ScreenshotReportSummary) => void;
+}) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [reviewDecisions, setReviewDecisions] = useState<Record<string, ReviewDecision>>({});
+  const [localReviewDecisions, setLocalReviewDecisions] = useState<Record<string, ReviewDecision>>({});
+  const [ignoredMalformedLocalDecisions, setIgnoredMalformedLocalDecisions] = useState(false);
+  const [loadedDecisionSummary, setLoadedDecisionSummary] = useState({ current: 0, stale: 0, total: 0 });
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [themeFilter, setThemeFilter] = useState("all");
+  const [kindFilter, setKindFilter] = useState("all");
 
   useEffect(() => {
     if (!report) {
       setReviewDecisions({});
+      setLocalReviewDecisions({});
+      setIgnoredMalformedLocalDecisions(false);
+      setLoadedDecisionSummary({ current: 0, stale: 0, total: 0 });
       return;
     }
 
-    const raw = window.localStorage.getItem(reportReviewStorageKey(report));
     const exported = Object.fromEntries(report.reviewDecisions.map((item) => [item.key, item.decision]));
-    const local = raw ? JSON.parse(raw) : {};
+    const stored = readStoredReviewDecisions(report);
+    const local = stored.decisions;
     const merged = { ...exported, ...local };
     setReviewDecisions(merged);
-    if (Object.keys(merged).length) {
-      window.localStorage.setItem(reportReviewStorageKey(report), JSON.stringify(merged));
-    }
+    setLocalReviewDecisions(local);
+    setIgnoredMalformedLocalDecisions(stored.ignoredMalformed);
+    setLoadedDecisionSummary(loadedReviewDecisionSummary(report.reviewItems, report.reviewDecisions));
   }, [report?.reportPath]);
+
+  useEffect(() => {
+    if (!report) {
+      setStatusFilter("all");
+      setThemeFilter("all");
+      setKindFilter("all");
+      return;
+    }
+
+    const filters = normalizeReportFilters(readReportFilters(report), {
+      statuses: uniqueReportValues(report.reviewItems, (item) => item.status),
+      themes: uniqueReportValues(report.reviewItems, (item) => item.theme),
+      kinds: uniqueReportValues(report.reviewItems, (item) => item.kind),
+    });
+    setStatusFilter(filters.status);
+    setThemeFilter(filters.theme);
+    setKindFilter(filters.kind);
+  }, [report?.reportPath]);
+
+  useEffect(() => {
+    if (!report) return;
+
+    window.localStorage.setItem(
+      reportFilterStorageKey(report),
+      JSON.stringify({
+        status: statusFilter,
+        theme: themeFilter,
+        kind: kindFilter,
+      } satisfies ReportFilterState),
+    );
+  }, [kindFilter, report?.reportPath, statusFilter, themeFilter]);
 
   async function runReportAction(action: () => Promise<void>) {
     if (!isTauriRuntime()) {
@@ -1945,14 +2233,28 @@ function ScreenshotReportPanel({ error, report }: { error: string | null; report
 
     const key = reviewItemKey(item);
     const next = { ...reviewDecisions };
+    const nextLocal = { ...localReviewDecisions };
     if (decision) {
       next[key] = decision;
+      nextLocal[key] = decision;
     } else {
       delete next[key];
+      delete nextLocal[key];
     }
 
     setReviewDecisions(next);
-    window.localStorage.setItem(reportReviewStorageKey(report), JSON.stringify(next));
+    setLocalReviewDecisions(nextLocal);
+    window.localStorage.setItem(reportReviewStorageKey(report), JSON.stringify(nextLocal));
+  }
+
+  function clearStaleReviewDecisions() {
+    if (!report) return;
+
+    const next = pruneReviewDecisions(report.reviewItems, reviewDecisions);
+    const nextLocal = pruneReviewDecisions(report.reviewItems, localReviewDecisions);
+    setReviewDecisions(next);
+    setLocalReviewDecisions(nextLocal);
+    window.localStorage.setItem(reportReviewStorageKey(report), JSON.stringify(nextLocal));
   }
 
   async function exportReviewDecisions() {
@@ -1977,6 +2279,12 @@ function ScreenshotReportPanel({ error, report }: { error: string | null; report
     }
   }
 
+  function resetReportFilters() {
+    setStatusFilter("all");
+    setThemeFilter("all");
+    setKindFilter("all");
+  }
+
   if (error) {
     return (
       <div className="report-panel">
@@ -1993,24 +2301,56 @@ function ScreenshotReportPanel({ error, report }: { error: string | null; report
     );
   }
 
-  const counts: Array<[string, number]> = [
-    ["Added", report.summary.added],
-    ["Removed", report.summary.removed],
-    ["Changed", report.summary.changed],
-    ["Tolerated", report.summary.tolerated],
-    ["Unchanged", report.summary.unchanged],
-    ["Total", report.summary.totalCompared],
+  const counts: ReportCountCard[] = [
+    { label: "Added", status: "added", value: report.summary.added },
+    { label: "Removed", status: "removed", value: report.summary.removed },
+    { label: "Changed", status: "changed", value: report.summary.changed },
+    { label: "Tolerated", status: "tolerated", value: report.summary.tolerated },
+    { label: "Unchanged", value: report.summary.unchanged },
+    { label: "Total", value: report.summary.totalCompared },
   ];
-  const acceptedCount = Object.values(reviewDecisions).filter((decision) => decision === "accepted").length;
-  const dismissedCount = Object.values(reviewDecisions).filter((decision) => decision === "dismissed").length;
+  const currentDecisions = report.reviewItems.map((item) => reviewDecisions[reviewItemKey(item)] ?? null);
+  const currentReviewItemKeys = new Set(report.reviewItems.map(reviewItemKey));
+  const staleLocalDecisionCount = Object.keys(localReviewDecisions).filter((key) => !currentReviewItemKeys.has(key)).length;
+  const acceptedCount = currentDecisions.filter((decision) => decision === "accepted").length;
+  const dismissedCount = currentDecisions.filter((decision) => decision === "dismissed").length;
   const reviewedCount = acceptedCount + dismissedCount;
+  const reportReviewStatus = reviewedReportStatus({
+    acceptedCount,
+    dismissedCount,
+    fallbackDetail: report.statusDetail,
+    fallbackStatus: report.status,
+    fallbackTitle: report.statusTitle,
+    total: report.reviewItems.length,
+  });
+  const statusOptions = uniqueReportValues(report.reviewItems, (item) => item.status);
+  const themeOptions = uniqueReportValues(report.reviewItems, (item) => item.theme);
+  const kindOptions = uniqueReportValues(report.reviewItems, (item) => item.kind);
+  const themeTotals = reportReviewTotals(report.reviewItems, (item) => item.theme);
+  const kindTotals = reportReviewTotals(report.reviewItems, (item) => item.kind);
+  const filteredReviewItems = filterReportReviewItems(report.reviewItems, {
+    kind: kindFilter,
+    status: statusFilter,
+    theme: themeFilter,
+  });
+  const hasActiveReportFilters = statusFilter !== "all" || themeFilter !== "all" || kindFilter !== "all";
+  const reviewItemCountLabel = hasActiveReportFilters
+    ? `${filteredReviewItems.length} of ${report.reviewItems.length} shown`
+    : `${report.reviewItems.length} total`;
+  const loadedDecisionMessage = loadedReviewDecisionMessage(loadedDecisionSummary);
+  const reviewSourceMessage = reviewDecisionSourceMessage(
+    reviewDecisionSourceSummary(report.reviewItems, report.reviewDecisions, localReviewDecisions),
+  );
+  const localDecisionWarningMessage = storedReviewDecisionWarningMessage(ignoredMalformedLocalDecisions);
+  const emptyProgressCopy = emptyReviewProgressCopy();
+  const staleLocalActionLabel = staleLocalDecisionActionLabel(staleLocalDecisionCount);
 
   return (
     <div className="report-panel">
-      <section className={`report-status ${report.status}`}>
+      <section className={`report-status ${reportReviewStatus.status}`}>
         <span>Screenshot report</span>
-        <strong>{report.statusTitle}</strong>
-        <p>{report.statusDetail}</p>
+        <strong>{reportReviewStatus.title}</strong>
+        <p>{reportReviewStatus.detail}</p>
       </section>
       <section className="report-snapshot">
         <span>Snapshot</span>
@@ -2019,38 +2359,187 @@ function ScreenshotReportPanel({ error, report }: { error: string | null; report
         </strong>
         <small>{new Date(report.comparedAt).toLocaleString()}</small>
       </section>
+      {reports.length > 1 && (
+        <section className="report-history">
+          <span>Recent reports</span>
+          <div className="report-history-list">
+            {reports.map((item) => (
+              <button
+                className={item.reportPath === report.reportPath ? "report-history-item active" : "report-history-item"}
+                key={item.reportPath}
+                onClick={() => onSelectReport(item)}
+                type="button"
+              >
+                <strong>
+                  {item.baselineSnapshotId} to {item.latestSnapshotId}
+                </strong>
+                <small>
+                  {new Date(item.comparedAt).toLocaleString()} · {reportDeltaSummary(item)}
+                </small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="report-count-grid">
-        {counts.map(([label, value]) => (
-          <section className="report-count" key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </section>
-        ))}
+        {counts.map((item) => {
+          if (!item.status) {
+            return (
+            <section className="report-count" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </section>
+            );
+          }
+
+          const status = item.status;
+          return (
+            <button
+              className={statusFilter === status ? "report-count active" : "report-count"}
+              key={item.label}
+              onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
+              type="button"
+            >
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </button>
+          );
+        })}
       </div>
+      {themeTotals.length > 0 && (
+        <section className="report-breakdown">
+          <span>Theme totals</span>
+          <div className="report-breakdown-list">
+            {themeTotals.map((item) => (
+              <button
+                className={themeFilter === item.label ? "report-breakdown-item active" : "report-breakdown-item"}
+                key={item.label}
+                onClick={() => setThemeFilter(themeFilter === item.label ? "all" : item.label)}
+                type="button"
+              >
+                <strong>{item.label}</strong>
+                <small>
+                  {item.total} total · {item.changed} changed · {item.added} added · {item.removed} removed · {item.tolerated} tolerated
+                </small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {kindTotals.length > 0 && (
+        <section className="report-breakdown">
+          <span>Kind totals</span>
+          <div className="report-breakdown-list">
+            {kindTotals.map((item) => (
+              <button
+                className={kindFilter === item.label ? "report-breakdown-item active" : "report-breakdown-item"}
+                key={item.label}
+                onClick={() => setKindFilter(kindFilter === item.label ? "all" : item.label)}
+                type="button"
+              >
+                <strong>{item.label}</strong>
+                <small>
+                  {item.total} total · {item.changed} changed · {item.added} added · {item.removed} removed · {item.tolerated} tolerated
+                </small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="report-snapshot">
         <span>Thresholds</span>
         <strong>{formatPercent(report.thresholds.pixelDiffRatio)}</strong>
         <small>Color distance {report.thresholds.pixelColorDistance}</small>
       </section>
-      {report.reviewItems.length > 0 && (
-        <section className="report-review-progress">
-          <span>Review progress</span>
-          <strong>
-            {reviewedCount} of {report.reviewItems.length}
-          </strong>
-          <small>
-            {acceptedCount} accepted · {dismissedCount} dismissed
-          </small>
-          <button className="primary-command" disabled={reviewedCount === 0} onClick={exportReviewDecisions} type="button">
-            Export Decisions
-          </button>
-          {exportMessage && <p>{exportMessage}</p>}
-        </section>
-      )}
+      <section className="report-review-progress">
+        <span>Review progress</span>
+        {report.reviewItems.length > 0 ? (
+          <>
+            <strong>
+              {reviewedCount} of {report.reviewItems.length}
+            </strong>
+            <small>
+              {acceptedCount} accepted · {dismissedCount} dismissed
+            </small>
+            {reviewSourceMessage && <p className="report-review-source">{reviewSourceMessage}</p>}
+            {localDecisionWarningMessage && <p className="report-review-storage-warning">{localDecisionWarningMessage}</p>}
+            {loadedDecisionMessage && <p className="report-loaded-decisions">{loadedDecisionMessage}</p>}
+            {staleLocalDecisionCount > 0 && (
+              <button className="secondary-command" onClick={clearStaleReviewDecisions} type="button">
+                {staleLocalActionLabel}
+              </button>
+            )}
+            <button className="primary-command" disabled={reviewedCount === 0} onClick={exportReviewDecisions} type="button">
+              Export Decisions
+            </button>
+            {exportMessage && <p>{exportMessage}</p>}
+          </>
+        ) : (
+          <>
+            <strong>{emptyProgressCopy.title}</strong>
+            <small>{emptyProgressCopy.detail}</small>
+          </>
+        )}
+      </section>
       <section className="report-items">
-        <span>Review items</span>
+        <div className="report-items-header">
+          <div>
+            <span>Review items</span>
+            {report.reviewItems.length > 0 && <small>{reviewItemCountLabel}</small>}
+          </div>
+          {report.reviewItems.length > 0 && (
+            <button
+              aria-label="Reset report filters"
+              className="icon-command"
+              disabled={!hasActiveReportFilters}
+              onClick={resetReportFilters}
+              title="Reset filters"
+              type="button"
+            >
+              <RotateCcw size={15} />
+            </button>
+          )}
+        </div>
+        {report.reviewItems.length > 0 && (
+          <div className="report-filters">
+            <label>
+              Status
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="all">All</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Theme
+              <select value={themeFilter} onChange={(event) => setThemeFilter(event.target.value)}>
+                <option value="all">All</option>
+                {themeOptions.map((theme) => (
+                  <option key={theme} value={theme}>
+                    {theme}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Kind
+              <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>
+                <option value="all">All</option>
+                {kindOptions.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
         {report.reviewItems.length ? (
-          report.reviewItems.map((item) => {
+          filteredReviewItems.length ? (
+          filteredReviewItems.map((item) => {
             const decision = reviewDecisions[reviewItemKey(item)] ?? null;
             return (
             <article className={`report-item ${item.status} ${decision ?? ""}`} key={`${item.status}-${item.relativePath}`}>
@@ -2104,6 +2593,9 @@ function ScreenshotReportPanel({ error, report }: { error: string | null; report
             </article>
             );
           })
+          ) : (
+            <p>No review items match the selected filters.</p>
+          )
         ) : (
           <p>No changed, added, removed, or tolerated previews.</p>
         )}
@@ -2137,30 +2629,47 @@ function ScreenshotReportPanel({ error, report }: { error: string | null; report
   );
 }
 
-type ReviewDecision = "accepted" | "dismissed";
+type ReportCountCard = {
+  label: string;
+  value: number;
+  status?: ScreenshotReviewItem["status"];
+};
+
+type ReportFilterState = ReportReviewFilters;
+
+function boardGroupCardDomId(groupId: string) {
+  return `group-board-card-${groupId}`;
+}
+
+function duplicateBoardFilterStorageKey() {
+  return "theme-preview-duplicate-board-filter";
+}
+
+function readDuplicateBoardFilter() {
+  return parseDuplicateBoardFilter(window.localStorage.getItem(duplicateBoardFilterStorageKey()));
+}
 
 function reportReviewStorageKey(report: ScreenshotReportSummary) {
   return `theme-preview-report-review:${report.reportPath}`;
 }
 
-function reviewItemKey(item: ScreenshotReviewItem) {
-  return `${item.status}:${item.relativePath}`;
+function reportFilterStorageKey(report: ScreenshotReportSummary) {
+  return `theme-preview-report-filters:${report.reportPath}`;
 }
 
-function reviewDecisionExportPayload(report: ScreenshotReportSummary, decisions: Record<string, ReviewDecision>) {
-  const entries = Object.entries(decisions)
-    .map(([key, decision]) => ({ key, decision }))
-    .sort((left, right) => left.key.localeCompare(right.key));
+function readReportFilters(report: ScreenshotReportSummary): ReportFilterState {
+  return parseReportFilters(window.localStorage.getItem(reportFilterStorageKey(report)));
+}
 
-  return {
-    reportPath: report.reportPath,
-    baselineSnapshotId: report.baselineSnapshotId,
-    latestSnapshotId: report.latestSnapshotId,
-    exportedAt: new Date().toISOString(),
-    accepted: entries.filter((entry) => entry.decision === "accepted").length,
-    dismissed: entries.filter((entry) => entry.decision === "dismissed").length,
-    decisions: entries,
-  };
+function readStoredReviewDecisions(report: ScreenshotReportSummary) {
+  return parseStoredReviewDecisionResult(window.localStorage.getItem(reportReviewStorageKey(report)));
+}
+
+function reportDeltaSummary(report: ScreenshotReportSummary) {
+  const changed = report.summary.added + report.summary.removed + report.summary.changed;
+  if (changed > 0) return `${changed} need review`;
+  if (report.summary.tolerated > 0) return `${report.summary.tolerated} tolerated`;
+  return "all clear";
 }
 
 function downloadJson(filename: string, value: unknown) {
@@ -2288,27 +2797,58 @@ function GroupPreview({
 }
 
 function GroupBoard({
+  duplicateGroups,
   groups,
   groupFiles,
   componentFiles,
+  highlightedGroupId,
+  showDuplicatesOnly,
+  onShowDuplicatesOnlyChange,
   onSelect,
 }: {
+  duplicateGroups: DuplicateGroupFinding[];
   groups: GroupSummary[];
   groupFiles: Record<string, GroupFile>;
   componentFiles: Record<string, ComponentFile>;
+  highlightedGroupId: string | null;
+  showDuplicatesOnly: boolean;
+  onShowDuplicatesOnlyChange: (showDuplicatesOnly: boolean) => void;
   onSelect: (groupId: string) => void;
 }) {
+  const visibleGroups = filterDuplicateGroupSummaries(groups, duplicateGroups, showDuplicatesOnly);
+
   return (
-    <section className="group-board">
-      {groups.map((summary) => {
+    <section className="group-board-shell">
+      <header className="group-board-toolbar">
+        <label>
+          <input
+            checked={showDuplicatesOnly}
+            onChange={(event) => onShowDuplicatesOnlyChange(event.currentTarget.checked)}
+            type="checkbox"
+          />
+          Duplicate structures only
+        </label>
+        <small>
+          {visibleGroups.length} of {groups.length} groups shown
+        </small>
+      </header>
+      <div className="group-board">
+      {visibleGroups.map((summary) => {
         const group = groupFiles[summary.id];
+        const duplicateFinding = duplicateGroups.find((finding) => finding.groupIds.includes(summary.id));
+        const duplicateBadgeLabel = duplicateGroupBadgeLabel(duplicateFinding);
 
         return (
-          <article className="board-card" key={summary.id}>
+          <article
+            className={summary.id === highlightedGroupId ? "board-card highlighted" : "board-card"}
+            id={boardGroupCardDomId(summary.id)}
+            key={summary.id}
+          >
             <header>
               <div>
                 <span>{summary.layout}</span>
                 <h3>{summary.name}</h3>
+                {duplicateBadgeLabel && <em className="duplicate-badge">{duplicateBadgeLabel}</em>}
               </div>
               <button onClick={() => onSelect(summary.id)} type="button">
                 Open
@@ -2323,6 +2863,8 @@ function GroupBoard({
           </article>
         );
       })}
+      {!visibleGroups.length && <p className="board-empty">No duplicate group structures found.</p>}
+      </div>
     </section>
   );
 }

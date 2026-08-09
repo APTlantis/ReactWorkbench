@@ -11,6 +11,10 @@
     "screenshots": "node scripts/export-previews.mjs",
     "compare:screenshots": "node scripts/compare-previews.mjs",
     "compare:screenshots:strict": "node scripts/compare-previews.mjs --strict",
+    "test:compare": "node --test scripts/compare-previews.test.mjs",
+    "test:groups": "node --experimental-strip-types --test scripts/group-duplicates.test.ts",
+    "test:reports": "node --experimental-strip-types --test scripts/report-review.test.ts",
+    "verify": "node scripts/verify-preview.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

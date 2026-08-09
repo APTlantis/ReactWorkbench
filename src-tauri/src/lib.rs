@@ -376,7 +376,9 @@ fn list_components(app: AppHandle) -> Result<Vec<ComponentSummary>, String> {
 
 #[tauri::command]
 fn load_component(app: AppHandle, component_id: String) -> Result<ComponentFile, String> {
-    let path = metadata_dir(&app).join("components").join(format!("{component_id}.toml"));
+    let path = metadata_dir(&app)
+        .join("components")
+        .join(format!("{component_id}.toml"));
     read_toml(&path)
 }
 
@@ -397,7 +399,9 @@ fn list_groups(app: AppHandle) -> Result<Vec<GroupSummary>, String> {
 
 #[tauri::command]
 fn load_group(app: AppHandle, group_id: String) -> Result<GroupFile, String> {
-    let path = metadata_dir(&app).join("groups").join(format!("{group_id}.toml"));
+    let path = metadata_dir(&app)
+        .join("groups")
+        .join(format!("{group_id}.toml"));
     read_toml(&path)
 }
 
@@ -430,7 +434,11 @@ fn write_group_file(
         return Err("Group name must contain at least one letter or number.".to_string());
     }
     let validation = validate_group_file(app, &group)?;
-    if validation.issues.iter().any(|issue| issue.severity == "error") {
+    if validation
+        .issues
+        .iter()
+        .any(|issue| issue.severity == "error")
+    {
         let details = validation
             .issues
             .iter()
@@ -442,8 +450,12 @@ fn write_group_file(
     }
 
     let dir = writable_metadata_dir(app).join("groups");
-    fs::create_dir_all(&dir)
-        .map_err(|error| format!("Could not create group metadata directory {}: {error}", dir.display()))?;
+    fs::create_dir_all(&dir).map_err(|error| {
+        format!(
+            "Could not create group metadata directory {}: {error}",
+            dir.display()
+        )
+    })?;
     let path = dir.join(format!("{}.toml", group.group.id));
 
     if original_group_id.as_deref() != Some(group.group.id.as_str()) && path.exists() {
@@ -494,7 +506,9 @@ fn list_themes(app: AppHandle) -> Result<Vec<ThemeSummary>, String> {
 
 #[tauri::command]
 fn load_theme(app: AppHandle, theme_id: String) -> Result<ThemeFile, String> {
-    let path = metadata_dir(&app).join("themes").join(format!("{theme_id}.toml"));
+    let path = metadata_dir(&app)
+        .join("themes")
+        .join(format!("{theme_id}.toml"));
     read_toml(&path)
 }
 
@@ -504,13 +518,21 @@ fn save_preview_selection(app: AppHandle, selection: PreviewSelection) -> Result
         .path()
         .app_data_dir()
         .map_err(|error| format!("Could not resolve app data directory: {error}"))?;
-    fs::create_dir_all(&dir)
-        .map_err(|error| format!("Could not create app data directory {}: {error}", dir.display()))?;
+    fs::create_dir_all(&dir).map_err(|error| {
+        format!(
+            "Could not create app data directory {}: {error}",
+            dir.display()
+        )
+    })?;
     let path = dir.join("last-preview.json");
     let json = serde_json::to_string_pretty(&selection)
         .map_err(|error| format!("Could not serialize preview selection: {error}"))?;
-    fs::write(&path, json)
-        .map_err(|error| format!("Could not save preview selection {}: {error}", path.display()))
+    fs::write(&path, json).map_err(|error| {
+        format!(
+            "Could not save preview selection {}: {error}",
+            path.display()
+        )
+    })
 }
 
 #[tauri::command]
@@ -537,7 +559,11 @@ fn initialize_local_index(app: AppHandle) -> Result<EnvironmentStatus, String> {
         indexed_record_count = records.len();
         let sql_path = app_data.join("rebuild-index.sql");
         write_index_sql(&sql_path, &records)?;
-        let output = Command::new("duckdb").arg(&database).arg("-f").arg(&sql_path).output();
+        let output = Command::new("duckdb")
+            .arg(&database)
+            .arg("-f")
+            .arg(&sql_path)
+            .output();
         match output {
             Ok(result) if result.status.success() => {
                 index_initialized = true;
@@ -578,7 +604,9 @@ fn search_index(
 ) -> Result<Vec<IndexSearchResult>, String> {
     let duckdb = command_version("duckdb", "-version");
     if !duckdb.available {
-        return Err("DuckDB is not available, so the local catalog cannot be searched.".to_string());
+        return Err(
+            "DuckDB is not available, so the local catalog cannot be searched.".to_string(),
+        );
     }
 
     let app_data = app
@@ -605,7 +633,10 @@ fn search_index(
     }
 
     if type_filter != "all" {
-        sql.push_str(&format!(" AND record_type = '{}'", sql_escape(&type_filter)));
+        sql.push_str(&format!(
+            " AND record_type = '{}'",
+            sql_escape(&type_filter)
+        ));
     }
 
     sql.push_str(" ORDER BY record_type, title LIMIT 50;");
@@ -634,13 +665,26 @@ fn search_index(
 
 #[tauri::command]
 fn latest_screenshot_report(app: AppHandle) -> Result<Option<ScreenshotReportSummary>, String> {
+    Ok(recent_screenshot_reports(app, Some(1))?.into_iter().next())
+}
+
+#[tauri::command]
+fn recent_screenshot_reports(
+    app: AppHandle,
+    limit: Option<usize>,
+) -> Result<Vec<ScreenshotReportSummary>, String> {
     let reports_dir = artifacts_dir(&app).join("previews").join("reports");
     if !reports_dir.is_dir() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
 
     let mut reports = fs::read_dir(&reports_dir)
-        .map_err(|error| format!("Could not read screenshot reports {}: {error}", reports_dir.display()))?
+        .map_err(|error| {
+            format!(
+                "Could not read screenshot reports {}: {error}",
+                reports_dir.display()
+            )
+        })?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
@@ -653,15 +697,28 @@ fn latest_screenshot_report(app: AppHandle) -> Result<Option<ScreenshotReportSum
         })
         .collect::<Vec<_>>();
     reports.sort_by_key(|(modified, _)| *modified);
+    reports.reverse();
 
-    let Some((_, report_path)) = reports.pop() else {
-        return Ok(None);
-    };
+    reports
+        .into_iter()
+        .take(limit.unwrap_or(8))
+        .map(|(_, report_path)| read_screenshot_report_summary(report_path))
+        .collect()
+}
 
-    let content = fs::read_to_string(&report_path)
-        .map_err(|error| format!("Could not read screenshot report {}: {error}", report_path.display()))?;
-    let report = serde_json::from_str::<ScreenshotReportFile>(&content)
-        .map_err(|error| format!("Could not parse screenshot report {}: {error}", report_path.display()))?;
+fn read_screenshot_report_summary(report_path: PathBuf) -> Result<ScreenshotReportSummary, String> {
+    let content = fs::read_to_string(&report_path).map_err(|error| {
+        format!(
+            "Could not read screenshot report {}: {error}",
+            report_path.display()
+        )
+    })?;
+    let report = serde_json::from_str::<ScreenshotReportFile>(&content).map_err(|error| {
+        format!(
+            "Could not parse screenshot report {}: {error}",
+            report_path.display()
+        )
+    })?;
     let (status, status_title, status_detail) = screenshot_report_status(&report.summary);
     let html_report_path = report_path.with_extension("html");
     let markdown_report_path = report_path.with_extension("md");
@@ -669,7 +726,7 @@ fn latest_screenshot_report(app: AppHandle) -> Result<Option<ScreenshotReportSum
     let review_items = screenshot_review_items(&report);
     let review_decisions = read_screenshot_review_decisions(&report_path)?;
 
-    Ok(Some(ScreenshotReportSummary {
+    Ok(ScreenshotReportSummary {
         report_path: report_path.display().to_string(),
         html_report_path: html_report_path.display().to_string(),
         markdown_report_path: markdown_report_path.display().to_string(),
@@ -688,7 +745,7 @@ fn latest_screenshot_report(app: AppHandle) -> Result<Option<ScreenshotReportSum
         summary: report.summary,
         review_items,
         review_decisions,
-    }))
+    })
 }
 
 #[tauri::command]
@@ -698,18 +755,28 @@ fn export_screenshot_review_decisions(
 ) -> Result<ScreenshotReviewExportResult, String> {
     let reports_dir = artifacts_dir(&app).join("previews").join("reports");
     let report_path = PathBuf::from(&export.report_path);
-    let canonical_reports_dir = reports_dir
-        .canonicalize()
-        .map_err(|error| format!("Could not resolve screenshot reports directory {}: {error}", reports_dir.display()))?;
-    let canonical_report_path = report_path
-        .canonicalize()
-        .map_err(|error| format!("Could not resolve screenshot report {}: {error}", report_path.display()))?;
+    let canonical_reports_dir = reports_dir.canonicalize().map_err(|error| {
+        format!(
+            "Could not resolve screenshot reports directory {}: {error}",
+            reports_dir.display()
+        )
+    })?;
+    let canonical_report_path = report_path.canonicalize().map_err(|error| {
+        format!(
+            "Could not resolve screenshot report {}: {error}",
+            report_path.display()
+        )
+    })?;
 
     if !canonical_report_path.starts_with(&canonical_reports_dir) {
         return Err("Review decisions can only be exported beside screenshot reports.".to_string());
     }
 
-    if canonical_report_path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+    if canonical_report_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        != Some("json")
+    {
         return Err("Review decisions must be exported for a JSON screenshot report.".to_string());
     }
 
@@ -727,8 +794,12 @@ fn export_screenshot_review_decisions(
         .count();
     let json = serde_json::to_string_pretty(&export)
         .map_err(|error| format!("Could not serialize review decisions: {error}"))?;
-    fs::write(&output_path, format!("{json}\n"))
-        .map_err(|error| format!("Could not export review decisions {}: {error}", output_path.display()))?;
+    fs::write(&output_path, format!("{json}\n")).map_err(|error| {
+        format!(
+            "Could not export review decisions {}: {error}",
+            output_path.display()
+        )
+    })?;
 
     Ok(ScreenshotReviewExportResult {
         path: output_path.display().to_string(),
@@ -738,16 +809,26 @@ fn export_screenshot_review_decisions(
     })
 }
 
-fn read_screenshot_review_decisions(report_path: &Path) -> Result<Vec<ScreenshotReviewDecision>, String> {
+fn read_screenshot_review_decisions(
+    report_path: &Path,
+) -> Result<Vec<ScreenshotReviewDecision>, String> {
     let path = review_decision_export_path(report_path)?;
     if !path.is_file() {
         return Ok(Vec::new());
     }
 
-    let content = fs::read_to_string(&path)
-        .map_err(|error| format!("Could not read review decisions {}: {error}", path.display()))?;
-    let export = serde_json::from_str::<ScreenshotReviewExport>(&content)
-        .map_err(|error| format!("Could not parse review decisions {}: {error}", path.display()))?;
+    let content = fs::read_to_string(&path).map_err(|error| {
+        format!(
+            "Could not read review decisions {}: {error}",
+            path.display()
+        )
+    })?;
+    let export = serde_json::from_str::<ScreenshotReviewExport>(&content).map_err(|error| {
+        format!(
+            "Could not parse review decisions {}: {error}",
+            path.display()
+        )
+    })?;
 
     Ok(export
         .decisions
@@ -860,7 +941,11 @@ fn screenshot_report_status(summary: &ScreenshotReportCounts) -> (String, String
             "Needs review".to_string(),
             format!(
                 "{blocking} preview {} review before accepting this snapshot.",
-                if blocking == 1 { "item needs" } else { "items need" }
+                if blocking == 1 {
+                    "item needs"
+                } else {
+                    "items need"
+                }
             ),
         );
     }
@@ -929,7 +1014,10 @@ fn validate_group_against_components(
             issues.push(GroupValidationIssue {
                 severity: "warning".to_string(),
                 title: "Missing role label".to_string(),
-                detail: format!("{}:{} does not describe what it does in the area.", item.component, item.state),
+                detail: format!(
+                    "{}:{} does not describe what it does in the area.",
+                    item.component, item.state
+                ),
             });
         } else if !roles.insert(item.role.to_lowercase()) {
             issues.push(GroupValidationIssue {
@@ -1089,7 +1177,12 @@ where
     T: for<'de> Deserialize<'de>,
 {
     let mut files: Vec<PathBuf> = fs::read_dir(dir)
-        .map_err(|error| format!("Could not read metadata directory {}: {error}", dir.display()))?
+        .map_err(|error| {
+            format!(
+                "Could not read metadata directory {}: {error}",
+                dir.display()
+            )
+        })?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("toml"))
@@ -1105,8 +1198,7 @@ where
 {
     let content = fs::read_to_string(path)
         .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
-    toml::from_str(&content)
-        .map_err(|error| format!("Could not parse {}: {error}", path.display()))
+    toml::from_str(&content).map_err(|error| format!("Could not parse {}: {error}", path.display()))
 }
 
 fn metadata_dir(app: &AppHandle) -> PathBuf {
@@ -1121,12 +1213,22 @@ fn metadata_dir(app: &AppHandle) -> PathBuf {
         candidates.push(current_dir.join("..").join("metadata"));
     }
 
-    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("metadata"));
+    candidates.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("metadata"),
+    );
 
     candidates
         .into_iter()
-        .find(|candidate| candidate.join("components").is_dir() && candidate.join("themes").is_dir())
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("metadata"))
+        .find(|candidate| {
+            candidate.join("components").is_dir() && candidate.join("themes").is_dir()
+        })
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("metadata")
+        })
 }
 
 fn writable_metadata_dir(app: &AppHandle) -> PathBuf {
@@ -1161,7 +1263,11 @@ fn artifacts_dir(app: &AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
         .map(|dir| dir.join("artifacts"))
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("artifacts"))
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("artifacts")
+        })
 }
 
 fn slugify(value: &str) -> String {
@@ -1222,6 +1328,7 @@ pub fn run() {
             initialize_local_index,
             search_index,
             latest_screenshot_report,
+            recent_screenshot_reports,
             export_screenshot_review_decisions
         ])
         .run(tauri::generate_context!())
@@ -1242,8 +1349,12 @@ mod tests {
 
         assert_eq!(components.len(), 5);
         assert!(components.iter().all(|component| component.framework.react));
-        assert!(components.iter().all(|component| !component.props.is_empty()));
-        assert!(components.iter().all(|component| !component.states.is_empty()));
+        assert!(components
+            .iter()
+            .all(|component| !component.props.is_empty()));
+        assert!(components
+            .iter()
+            .all(|component| !component.states.is_empty()));
     }
 
     #[test]
@@ -1256,7 +1367,9 @@ mod tests {
 
         assert_eq!(themes.len(), 3);
         assert!(themes.iter().all(|theme| theme.spacing.unit > 0));
-        assert!(themes.iter().all(|theme| !theme.colors.surface_muted.is_empty()));
+        assert!(themes
+            .iter()
+            .all(|theme| !theme.colors.surface_muted.is_empty()));
     }
 
     #[test]
@@ -1267,7 +1380,7 @@ mod tests {
             .join("groups");
         let groups: Vec<GroupFile> = read_all_toml(&dir).expect("groups should parse");
 
-        assert_eq!(groups.len(), 8);
+        assert_eq!(groups.len(), 9);
         assert!(groups.iter().all(|group| !group.items.is_empty()));
         assert!(groups.iter().all(|group| !group.group.layout.is_empty()));
     }
@@ -1285,8 +1398,12 @@ mod tests {
 
     #[test]
     fn review_decision_exports_are_not_screenshot_reports() {
-        assert!(is_review_decision_export(Path::new("baseline-to-latest.review.json")));
-        assert!(!is_review_decision_export(Path::new("baseline-to-latest.json")));
+        assert!(is_review_decision_export(Path::new(
+            "baseline-to-latest.review.json"
+        )));
+        assert!(!is_review_decision_export(Path::new(
+            "baseline-to-latest.json"
+        )));
     }
 
     #[test]

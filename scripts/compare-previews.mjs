@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { PNG } from "playwright-core/lib/utilsBundle";
 
 const previewsRoot = resolve("artifacts/previews");
@@ -27,6 +28,9 @@ async function main() {
   const reportPath = join(reportsDir, `${report.baseline.snapshotId}-to-${report.latest.snapshotId}.json`);
   const htmlReportPath = join(reportsDir, `${report.baseline.snapshotId}-to-${report.latest.snapshotId}.html`);
   const markdownReportPath = join(reportsDir, `${report.baseline.snapshotId}-to-${report.latest.snapshotId}.md`);
+  const reviewDecisionPath = join(reportsDir, `${report.baseline.snapshotId}-to-${report.latest.snapshotId}.review.json`);
+  const decisions = await readReviewDecisions(reviewDecisionPath);
+  report.reviewDecisionSummary = reviewDecisionSummary(report, decisions);
 
   await mkdir(reportsDir, { recursive: true });
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -40,9 +44,19 @@ async function main() {
   console.log(`HTML report written to ${htmlReportPath}`);
   console.log(`Markdown report written to ${markdownReportPath}`);
 
-  if (strictComparison && reviewStatus(report).kind === "review") {
-    console.error("Strict screenshot comparison failed. Review the report before accepting this snapshot.");
-    process.exitCode = 1;
+  if (strictComparison) {
+    const strictResult = strictReviewResult(report, decisions);
+    if (strictResult.unresolved.length) {
+      console.error(
+        `Strict screenshot comparison failed. ${strictResult.unresolved.length} blocking ${strictResult.unresolved.length === 1 ? "item needs" : "items need"} review before accepting this snapshot.`,
+      );
+      if (strictResult.accepted.length) {
+        console.error(`${strictResult.accepted.length} blocking ${strictResult.accepted.length === 1 ? "item was" : "items were"} accepted from ${reviewDecisionPath}.`);
+      }
+      process.exitCode = 1;
+    } else if (strictResult.accepted.length) {
+      console.log(`${strictResult.accepted.length} blocking ${strictResult.accepted.length === 1 ? "item was" : "items were"} accepted from ${reviewDecisionPath}.`);
+    }
   }
 }
 
@@ -228,7 +242,7 @@ function writePixel(data, index, pixel) {
   data[index + 3] = pixel[3];
 }
 
-function markdownReport(report, markdownReportPath, htmlReportPath, jsonReportPath) {
+export function markdownReport(report, markdownReportPath, htmlReportPath, jsonReportPath) {
   const status = reviewStatus(report);
   const jsonUrl = relativeUrl(markdownReportPath, jsonReportPath);
   const htmlUrl = relativeUrl(markdownReportPath, htmlReportPath);
@@ -275,7 +289,32 @@ ${markdownEscape(status.detail)}
 | Pixel Threshold | ${report.thresholds.pixelDiffRatio} |
 | Compared | ${markdownTableCell(report.comparedAt)} |
 
+${markdownReviewCoverage(report)}
+
 ${sections}
+`;
+}
+
+function markdownReviewCoverage(report) {
+  const coverage = report.reviewDecisionSummary;
+  if (!coverage || coverage.status === "none") {
+    return "## Review Decisions\n\nNo blocking review decisions are recorded for this report.\n";
+  }
+
+  const stale = coverage.staleKeys.length ? `\n\nStale decision keys: ${coverage.staleKeys.map(markdownTableCell).join(", ")}` : "";
+  const unresolved = coverage.unresolvedKeys.length ? `\n\nUnresolved decision keys: ${coverage.unresolvedKeys.map(markdownTableCell).join(", ")}` : "";
+
+  return `## Review Decisions
+
+Status: ${markdownTableCell(coverage.status)}
+
+| Metric | Value |
+| --- | ---: |
+| Blocking Items | ${coverage.totalBlocking} |
+| Accepted | ${coverage.accepted} |
+| Dismissed | ${coverage.dismissed} |
+| Unresolved | ${coverage.unresolved} |
+| Stale | ${coverage.stale} |${unresolved}${stale}
 `;
 }
 
@@ -323,7 +362,7 @@ ${rows}
 `;
 }
 
-function htmlReport(report, htmlReportPath, jsonReportPath) {
+export function htmlReport(report, htmlReportPath, jsonReportPath) {
   const status = reviewStatus(report);
   const sections = [
     imageSection("Changed", report.changed, htmlReportPath, changedCard),
@@ -351,7 +390,7 @@ function htmlReport(report, htmlReportPath, jsonReportPath) {
     .meta, .summary, .cards, .status-actions { display: grid; gap: 10px; }
     .status-actions { grid-template-columns: repeat(auto-fit, minmax(150px, max-content)); }
     .summary { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
-    .pill, .card, .meta, .status { border: 1px solid #d1d9e6; border-radius: 8px; background: #fff; }
+    .pill, .card, .meta, .status, .review-decisions { border: 1px solid #d1d9e6; border-radius: 8px; background: #fff; }
     .pill { padding: 10px; }
     .pill span, .card span, .meta span, .status span { display: block; color: #667085; font-size: 0.74rem; font-weight: 800; text-transform: uppercase; }
     .pill strong { display: block; margin-top: 3px; font-size: 1.25rem; }
@@ -361,6 +400,11 @@ function htmlReport(report, htmlReportPath, jsonReportPath) {
     .status.ready { border-left-color: #198754; }
     .status.tolerated { border-left-color: #b7791f; }
     .status.review { border-left-color: #c2413d; }
+    .review-decisions { padding: 12px; display: grid; gap: 8px; border-left: 6px solid #94a3b8; }
+    .review-decisions.reviewed { border-left-color: #198754; }
+    .review-decisions.partial, .review-decisions.partial-with-stale, .review-decisions.stale, .review-decisions.reviewed-with-stale { border-left-color: #b7791f; }
+    .review-decisions.missing, .review-decisions.missing-with-stale { border-left-color: #c2413d; }
+    .review-decisions ul { margin: 0; padding-left: 18px; color: #52627a; font-size: 0.82rem; }
     button { min-height: 34px; padding: 0 11px; border: 1px solid #b9c6d8; border-radius: 8px; color: #263141; background: #fff; font: inherit; font-weight: 800; cursor: pointer; }
     section { display: grid; gap: 10px; }
     .cards { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
@@ -408,6 +452,7 @@ function htmlReport(report, htmlReportPath, jsonReportPath) {
       <p><span>Pixel Threshold</span>${report.thresholds.pixelDiffRatio}</p>
       <p><span>Compared</span>${escapeHtml(report.comparedAt)}</p>
     </div>
+    ${htmlReviewCoverage(report)}
     ${sections}
   </main>
   <script>
@@ -439,6 +484,49 @@ function htmlReport(report, htmlReportPath, jsonReportPath) {
 `;
 }
 
+function htmlReviewCoverage(report) {
+  const coverage = report.reviewDecisionSummary;
+  if (!coverage || coverage.status === "none") {
+    return `<section class="review-decisions"><span>Review Decisions</span><strong>No blocking decisions recorded</strong><p>No blocking review decisions are recorded for this report.</p></section>`;
+  }
+
+  const stale = coverage.staleKeys.length
+    ? `<p><span>Stale Decision Keys</span></p><ul>${coverage.staleKeys.map((key) => `<li>${escapeHtml(key)}</li>`).join("")}</ul>`
+    : "";
+  const unresolved = coverage.unresolvedKeys.length
+    ? `<p><span>Unresolved Decision Keys</span></p><ul>${coverage.unresolvedKeys.map((key) => `<li>${escapeHtml(key)}</li>`).join("")}</ul>`
+    : "";
+
+  return `<section class="review-decisions ${escapeHtml(coverage.status)}">
+      <span>Review Decisions</span>
+      <strong>${escapeHtml(reviewCoverageTitle(coverage.status))}</strong>
+      <p>${coverage.accepted} accepted, ${coverage.dismissed} dismissed, ${coverage.unresolved} unresolved, ${coverage.stale} stale decision ${coverage.stale === 1 ? "key" : "keys"}.</p>
+      ${unresolved}
+      ${stale}
+    </section>`;
+}
+
+function reviewCoverageTitle(status) {
+  switch (status) {
+    case "reviewed":
+      return "All blocking items accepted";
+    case "reviewed-with-stale":
+      return "All blocking items accepted, with stale decisions";
+    case "partial":
+      return "Partial review coverage";
+    case "partial-with-stale":
+      return "Partial review coverage, with stale decisions";
+    case "missing":
+      return "Missing review decisions";
+    case "missing-with-stale":
+      return "Missing review decisions, with stale decisions";
+    case "stale":
+      return "Only stale review decisions found";
+    default:
+      return "Review decision coverage";
+  }
+}
+
 function reviewStatus(report) {
   const blocking = report.summary.added + report.summary.removed + report.summary.changed;
   if (blocking > 0) {
@@ -462,6 +550,76 @@ function reviewStatus(report) {
     title: "All clear",
     detail: "No preview additions, removals, or image differences were found.",
   };
+}
+
+async function readReviewDecisions(path) {
+  try {
+    const exportFile = JSON.parse(await readFile(path, "utf8"));
+    return new Map(
+      (exportFile.decisions ?? [])
+        .filter((item) => item.decision === "accepted" || item.decision === "dismissed")
+        .map((item) => [item.key, item.decision]),
+    );
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return new Map();
+    }
+
+    throw new Error(`Could not read review decisions ${path}: ${error.message}`);
+  }
+}
+
+export function strictReviewResult(report, decisions) {
+  const blockingItems = blockingReviewItems(report);
+  return {
+    accepted: blockingItems.filter((item) => decisions.get(item.key) === "accepted"),
+    unresolved: blockingItems.filter((item) => decisions.get(item.key) !== "accepted"),
+  };
+}
+
+export function reviewDecisionSummary(report, decisions) {
+  const blockingItems = blockingReviewItems(report);
+  const blockingKeys = new Set(blockingItems.map((item) => item.key));
+  const accepted = blockingItems.filter((item) => decisions.get(item.key) === "accepted");
+  const dismissed = blockingItems.filter((item) => decisions.get(item.key) === "dismissed");
+  const unresolved = blockingItems.filter((item) => !decisions.has(item.key));
+  const stale = Array.from(decisions.keys()).filter((key) => !blockingKeys.has(key)).sort();
+
+  return {
+    accepted: accepted.length,
+    dismissed: dismissed.length,
+    stale: stale.length,
+    totalBlocking: blockingItems.length,
+    unresolved: unresolved.length,
+    status: reviewDecisionCoverageStatus({ accepted, blockingItems, dismissed, stale, unresolved }),
+    staleKeys: stale,
+    unresolvedKeys: unresolved.map((item) => item.key),
+  };
+}
+
+function reviewDecisionCoverageStatus({ accepted, blockingItems, dismissed, stale, unresolved }) {
+  if (!blockingItems.length && stale.length) return "stale";
+  if (!blockingItems.length) return "none";
+  if (!unresolved.length && !dismissed.length && accepted.length === blockingItems.length) return stale.length ? "reviewed-with-stale" : "reviewed";
+  if (accepted.length || dismissed.length) return stale.length ? "partial-with-stale" : "partial";
+  return stale.length ? "missing-with-stale" : "missing";
+}
+
+export function blockingReviewItems(report) {
+  return [
+    ...report.changed.map((item) => ({
+      key: `changed:${item.latest.relativePath}`,
+      label: `${item.latest.theme} ${item.latest.kind} ${item.latest.name}`,
+    })),
+    ...report.added.map((item) => ({
+      key: `added:${item.relativePath}`,
+      label: `${item.theme} ${item.kind} ${item.name}`,
+    })),
+    ...report.removed.map((item) => ({
+      key: `removed:${item.relativePath}`,
+      label: `${item.theme} ${item.kind} ${item.name}`,
+    })),
+  ];
 }
 
 function summaryPill(label, value) {
@@ -568,7 +726,9 @@ function slugify(value) {
     .replace(/^-+|-+$/g, "");
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

@@ -1,0 +1,21 @@
+[group]
+id = "settings-review-row"
+name = "Settings Review Row"
+description = "A duplicate settings structure used to review repeated component-state sequences."
+layout = "row"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "badge"
+state = "soft-info"
+role = "Status"
+
+[[items]]
+component = "card"
+state = "compact-warning"
+role = "Summary"
+
+[[items]]
+component = "button"
+state = "secondary-disabled"
+role = "Action"

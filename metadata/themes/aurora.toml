@@ -10,12 +10,12 @@ surfaceMuted = "#e9f3ef"
 text = "#13231e"
 muted = "#5e7069"
 border = "#c7d9d2"
-primary = "#0f8b8d"
+primary = "#0c696b"
 secondary = "#566b73"
 danger = "#bd3f53"
 success = "#257a55"
-warning = "#b96f24"
-focus = "#3ca6a8"
+warning = "#8a5b13"
+focus = "#0f8b8d"
 
 [spacing]
 unit = 8
