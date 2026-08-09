@@ -10,14 +10,20 @@ This project started as a first-day prototype, so the roadmap should stay practi
 - TOML component metadata
 - TOML theme metadata
 - TOML group metadata
-- component preview
+- component preview across buttons, cards, badges, inputs, and toggles
 - theme switching
 - theme comparison
 - theme token inspection
 - group preview
 - group board
 - in-app group composer
+- editing existing groups
+- richer group layouts for toolbars, form rows, dialog footers, and table headers
 - deterministic group validation
+- deterministic preview checks for visible copy, theme contrast, empty groups, and unresolved group references
+- browser smoke checks for blank renders, horizontal clipping, unmanaged text overflow, and tiny controls
+- screenshot export for every browser-rendered component and group preview across every theme, with metadata-hash snapshots
+- screenshot comparison reports for added, removed, changed, and unchanged preview images, with pixel-diff artifacts for changed images
 - DuckDB-backed catalog indexing
 - catalog search
 
@@ -25,30 +31,27 @@ This project started as a first-day prototype, so the roadmap should stay practi
 
 1. Improve group authoring
 
-Add editing existing groups, not only copying or creating new ones.
+Item reordering is now included in the composer. Next useful improvements are duplicate group detection surfacing in the UI and a clearer review flow for validation warnings.
 
 2. Add more sample component types
 
-Inputs, toggles, table controls, tabs, toolbar actions, dialog footers, and settings rows would make the group board more informative.
+Inputs and toggles are now included. Table controls, tabs, toolbar actions, dialog footers, and settings rows would make the group board more informative.
 
 3. Add richer group layouts
 
-The current layouts are `row`, `grid`, and `stack`. Future layouts could include toolbar, form row, dialog footer, table header, split panel, and dashboard section.
+Toolbar, form row, dialog footer, and table header layouts are now included. Future layouts could include split panel and dashboard section.
 
-4. Add screenshots
+4. Extend screenshot exports
 
-Export component and group previews as images. This would make the catalog more useful and prepare for visual regression checks.
+Component and group previews can now be exported as images across every theme, each export is identified by a deterministic TOML metadata hash, and screenshot reports can compare latest output against a baseline snapshot with diff images for changed previews. Next useful improvements are perceptual thresholds and surfacing changed previews inside the app.
 
-5. Add deterministic visual checks
+5. Extend deterministic visual checks
 
-Start with measurable issues:
+The first app checks now cover visible copy, theme contrast, empty groups, and unresolved group references. The browser smoke check also covers blank renders, horizontal clipping, unmanaged text overflow, and tiny controls. Useful next checks should stay measurable:
 
-- missing references
-- text overflow
-- low contrast
 - clipped content
-- empty labels
-- tiny click targets
+- vertical clipping inside fixed-height regions
+- actual contrast sampled from rendered computed styles
 
 6. Add embedding-assisted search later
 

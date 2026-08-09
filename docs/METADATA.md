@@ -26,7 +26,7 @@ A component defines:
 - named states: reusable prop combinations
 - supported themes
 
-Named states are important because groups can reference them directly. A group does not need to repeat every prop value; it can say “use the Button danger loading state.”
+Named states are important because groups can reference them directly. A group does not need to repeat every prop value; it can say "use the Button danger loading state" or "use the Input invalid state."
 
 ## Themes
 
@@ -57,7 +57,7 @@ A group defines:
 
 - name
 - description
-- layout: `row`, `grid`, or `stack`
+- layout: `row`, `grid`, `stack`, `toolbar`, `form-row`, `dialog-footer`, or `table-header`
 - supported themes
 - items
 

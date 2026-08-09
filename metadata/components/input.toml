@@ -1,0 +1,66 @@
+[component]
+id = "input"
+name = "Input"
+description = "Text entry control with label, helper text, and validation states."
+themes = ["light", "dark", "aurora"]
+
+[framework]
+react = true
+svelte = false
+
+[[props]]
+id = "label"
+label = "Label"
+kind = "text"
+default = "Workspace name"
+
+[[props]]
+id = "value"
+label = "Value"
+kind = "text"
+default = "Aptlantis"
+
+[[props]]
+id = "placeholder"
+label = "Placeholder"
+kind = "text"
+default = "Enter a value"
+
+[[props]]
+id = "helper"
+label = "Helper"
+kind = "text"
+default = "Used in generated preview metadata."
+
+[[props]]
+id = "status"
+label = "Status"
+kind = "enum"
+default = "default"
+values = ["default", "success", "warning", "error"]
+
+[[props]]
+id = "disabled"
+label = "Disabled"
+kind = "boolean"
+default = "false"
+
+[[states]]
+id = "default-filled"
+label = "Filled"
+props = { label = "Workspace name", value = "Aptlantis", placeholder = "Enter a value", helper = "Used in generated preview metadata.", status = "default", disabled = "false" }
+
+[[states]]
+id = "warning-empty"
+label = "Warning Empty"
+props = { label = "Theme token", value = "", placeholder = "Select a token", helper = "This value needs a mapped token.", status = "warning", disabled = "false" }
+
+[[states]]
+id = "error-invalid"
+label = "Invalid"
+props = { label = "Component id", value = "Hero Card!", placeholder = "component-id", helper = "Use lowercase letters, numbers, and dashes.", status = "error", disabled = "false" }
+
+[[states]]
+id = "disabled-readonly"
+label = "Disabled"
+props = { label = "Source", value = "metadata/components", placeholder = "Path", helper = "Derived from local TOML.", status = "default", disabled = "true" }

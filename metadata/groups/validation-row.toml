@@ -1,0 +1,21 @@
+[group]
+id = "validation-row"
+name = "Validation Row"
+description = "A focused row for inspecting invalid metadata and the review control beside it."
+layout = "row"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "input"
+state = "error-invalid"
+role = "Problem"
+
+[[items]]
+component = "badge"
+state = "soft-danger"
+role = "Status"
+
+[[items]]
+component = "toggle"
+state = "warning-on"
+role = "Check"

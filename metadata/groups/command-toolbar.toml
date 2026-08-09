@@ -1,0 +1,21 @@
+[group]
+id = "command-toolbar"
+name = "Command Toolbar"
+description = "A horizontal action cluster with catalog state, a quick toggle, and a primary command."
+layout = "toolbar"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "badge"
+state = "soft-info"
+role = "Scope"
+
+[[items]]
+component = "toggle"
+state = "warning-on"
+role = "Check"
+
+[[items]]
+component = "button"
+state = "primary-ready"
+role = "Run"

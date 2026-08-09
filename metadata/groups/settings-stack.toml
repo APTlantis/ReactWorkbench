@@ -1,0 +1,21 @@
+[group]
+id = "settings-stack"
+name = "Settings Stack"
+description = "A compact settings form with editable text, binary preferences, and a save action."
+layout = "stack"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "input"
+state = "default-filled"
+role = "Name"
+
+[[items]]
+component = "toggle"
+state = "enabled"
+role = "Preference"
+
+[[items]]
+component = "button"
+state = "primary-ready"
+role = "Save"

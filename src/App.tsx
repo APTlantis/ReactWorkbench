@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Check,
   Circle,
   Columns3,
+  Copy,
   Database,
   FileCode2,
   GalleryHorizontalEnd,
@@ -12,9 +15,11 @@ import {
   Loader2,
   Moon,
   Palette,
+  Pencil,
   Plus,
   Save,
   Search,
+  ShieldCheck,
   Sun,
   SwatchBook,
   Zap,
@@ -61,7 +66,7 @@ type GroupSummary = {
   id: string;
   name: string;
   description: string;
-  layout: "row" | "grid" | "stack";
+  layout: GroupLayout;
   itemCount: number;
 };
 
@@ -70,7 +75,7 @@ type GroupFile = {
     id: string;
     name: string;
     description: string;
-    layout: "row" | "grid" | "stack";
+    layout: GroupLayout;
     themes: string[];
   };
   items: GroupItem[];
@@ -149,6 +154,29 @@ type GroupValidationIssue = {
   detail: string;
 };
 
+type VisualCheck = {
+  status: "ready" | "warning" | "error";
+  title: string;
+  detail: string;
+};
+
+type GroupLayout = "row" | "grid" | "stack" | "toolbar" | "form-row" | "dialog-footer" | "table-header";
+type InvokeArgs = Record<string, unknown>;
+type TomlValue = string | number | boolean | string[] | Record<string, string>;
+
+interface TomlObject {
+  [key: string]: TomlValue | TomlObject | TomlObject[];
+}
+
+const metadataModules = import.meta.glob("../metadata/**/*.toml", {
+  eager: true,
+  import: "default",
+  query: "?raw",
+}) as Record<string, string>;
+
+let browserGroupFiles: GroupFile[] | null = null;
+
+const groupLayouts: GroupLayout[] = ["row", "grid", "stack", "toolbar", "form-row", "dialog-footer", "table-header"];
 const booleanValue = (value: string | undefined) => value === "true";
 
 const emptyGroupDraft = (): GroupFile => ({
@@ -166,6 +194,370 @@ const emptyGroupDraft = (): GroupFile => ({
   ],
 });
 
+async function invoke<T>(command: string, args: InvokeArgs = {}): Promise<T> {
+  if (isTauriRuntime()) {
+    return tauriInvoke<T>(command, args);
+  }
+
+  return browserInvoke<T>(command, args);
+}
+
+function isTauriRuntime() {
+  return "__TAURI_INTERNALS__" in window;
+}
+
+async function browserInvoke<T>(command: string, args: InvokeArgs): Promise<T> {
+  switch (command) {
+    case "list_components":
+      return listBrowserComponents() as T;
+    case "load_component":
+      return loadBrowserComponent(String(args.componentId)) as T;
+    case "list_groups":
+      return listBrowserGroups() as T;
+    case "load_group":
+      return loadBrowserGroup(String(args.groupId)) as T;
+    case "save_group":
+      return saveBrowserGroup(args.group as GroupFile) as T;
+    case "update_group":
+      return updateBrowserGroup(String(args.originalGroupId), args.group as GroupFile) as T;
+    case "validate_group":
+      return validateGroupAgainstComponents(args.group as GroupFile, listBrowserComponentFiles()) as T;
+    case "list_themes":
+      return listBrowserThemes() as T;
+    case "load_theme":
+      return loadBrowserTheme(String(args.themeId)) as T;
+    case "save_preview_selection":
+      return undefined as T;
+    case "initialize_local_index":
+      return browserEnvironmentStatus() as T;
+    case "search_index":
+      return searchBrowserIndex(String(args.query ?? ""), String(args.recordType ?? "all")) as T;
+    default:
+      throw new Error(`Browser preview does not support command: ${command}`);
+  }
+}
+
+function listBrowserComponents(): ComponentSummary[] {
+  return listBrowserComponentFiles().map((component) => ({
+    id: component.component.id,
+    name: component.component.name,
+    description: component.component.description,
+    stateCount: component.states.length,
+  }));
+}
+
+function listBrowserComponentFiles(): ComponentFile[] {
+  return readBrowserMetadata<ComponentFile>("components");
+}
+
+function loadBrowserComponent(componentId: string): ComponentFile {
+  const component = listBrowserComponentFiles().find((item) => item.component.id === componentId);
+  if (!component) throw new Error(`Component ${componentId} was not found in browser metadata.`);
+  return clone(component);
+}
+
+function listBrowserGroups(): GroupSummary[] {
+  return listBrowserGroupFiles().map((group) => ({
+    id: group.group.id,
+    name: group.group.name,
+    description: group.group.description,
+    layout: group.group.layout,
+    itemCount: group.items.length,
+  }));
+}
+
+function listBrowserGroupFiles(): GroupFile[] {
+  if (!browserGroupFiles) {
+    browserGroupFiles = readBrowserMetadata<GroupFile>("groups");
+  }
+
+  return browserGroupFiles.map(clone);
+}
+
+function loadBrowserGroup(groupId: string): GroupFile {
+  const group = listBrowserGroupFiles().find((item) => item.group.id === groupId);
+  if (!group) throw new Error(`Group ${groupId} was not found in browser metadata.`);
+  return clone(group);
+}
+
+function saveBrowserGroup(group: GroupFile): GroupFile {
+  const saved = normalizeGroupForSave(group);
+  const groups = listBrowserGroupFiles();
+  if (groups.some((item) => item.group.id === saved.group.id)) {
+    throw new Error(`A group named ${saved.group.name} already exists. Choose a different name before saving.`);
+  }
+
+  browserGroupFiles = [...groups, saved].sort((left, right) => left.group.id.localeCompare(right.group.id));
+  return clone(saved);
+}
+
+function updateBrowserGroup(originalGroupId: string, group: GroupFile): GroupFile {
+  const saved = normalizeGroupForSave(group);
+  const groups = listBrowserGroupFiles();
+  if (groups.some((item) => item.group.id !== originalGroupId && item.group.id === saved.group.id)) {
+    throw new Error(`A group named ${saved.group.name} already exists. Choose a different name before saving.`);
+  }
+
+  browserGroupFiles = groups
+    .filter((item) => item.group.id !== originalGroupId)
+    .concat(saved)
+    .sort((left, right) => left.group.id.localeCompare(right.group.id));
+  return clone(saved);
+}
+
+function normalizeGroupForSave(group: GroupFile): GroupFile {
+  const saved = clone(group);
+  saved.group.id = slugify(saved.group.name);
+  if (!saved.group.id) {
+    throw new Error("Group name must contain at least one letter or number.");
+  }
+
+  const validation = validateGroupAgainstComponents(saved, listBrowserComponentFiles());
+  if (validation.issues.some((issue) => issue.severity === "error")) {
+    const details = validation.issues
+      .filter((issue) => issue.severity === "error")
+      .map((issue) => issue.title)
+      .join(", ");
+    throw new Error(`Group has blocking validation issues: ${details}`);
+  }
+
+  return saved;
+}
+
+function listBrowserThemes(): ThemeSummary[] {
+  return listBrowserThemeFiles().map((theme) => theme.theme);
+}
+
+function listBrowserThemeFiles(): ThemeFile[] {
+  return readBrowserMetadata<ThemeFile>("themes");
+}
+
+function loadBrowserTheme(themeId: string): ThemeFile {
+  const theme = listBrowserThemeFiles().find((item) => item.theme.id === themeId);
+  if (!theme) throw new Error(`Theme ${themeId} was not found in browser metadata.`);
+  return clone(theme);
+}
+
+function browserEnvironmentStatus(): EnvironmentStatus {
+  const recordCount = listBrowserComponents().length + listBrowserGroups().length + listBrowserThemes().length;
+
+  return {
+    duckdbAvailable: false,
+    ollamaAvailable: false,
+    embeddingModel: "browser-preview",
+    indexInitialized: true,
+    indexedRecordCount: recordCount,
+    message: "Browser preview is using bundled TOML metadata.",
+  };
+}
+
+function searchBrowserIndex(query: string, recordType: string): CatalogResult[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  const records = buildBrowserIndexRecords().filter((record) => {
+    const matchesType = recordType === "all" || record.recordType === recordType;
+    const matchesQuery = !normalizedQuery || `${record.title} ${record.body}`.toLowerCase().includes(normalizedQuery);
+    return matchesType && matchesQuery;
+  });
+
+  return records.slice(0, 50);
+}
+
+function buildBrowserIndexRecords(): CatalogResult[] {
+  const components = listBrowserComponentFiles().map((component) => ({
+    id: `component:${component.component.id}`,
+    recordType: "component" as const,
+    title: component.component.name,
+    body: `${component.component.description} Props: ${component.props.map((prop) => `${prop.id}:${prop.kind}`).join(", ")}. States: ${component.states
+      .map((state) => state.label)
+      .join(", ")}. Themes: ${component.component.themes.join(", ")}.`,
+  }));
+  const themes = listBrowserThemeFiles().map((theme) => ({
+    id: `theme:${theme.theme.id}`,
+    recordType: "theme" as const,
+    title: theme.theme.name,
+    body: `${theme.theme.description} Primary ${theme.colors.primary} surface ${theme.colors.surface} text ${theme.colors.text} density ${theme.spacing.density}.`,
+  }));
+  const groups = listBrowserGroupFiles().map((group) => ({
+    id: `group:${group.group.id}`,
+    recordType: "group" as const,
+    title: group.group.name,
+    body: `${group.group.description} Layout: ${group.group.layout}. Items: ${group.items
+      .map((item) => `${item.role} uses ${item.component}:${item.state}`)
+      .join(", ")}. Themes: ${group.group.themes.join(", ")}.`,
+  }));
+
+  return [...components, ...themes, ...groups].sort((left, right) => left.recordType.localeCompare(right.recordType) || left.title.localeCompare(right.title));
+}
+
+function validateGroupAgainstComponents(group: GroupFile, components: ComponentFile[]): GroupValidation {
+  const issues: GroupValidationIssue[] = [];
+  const componentMap = new Map(components.map((component) => [component.component.id, component]));
+  const roles = new Set<string>();
+
+  if (!groupLayouts.includes(group.group.layout)) {
+    issues.push({
+      severity: "error",
+      title: "Unsupported layout",
+      detail: `${group.group.layout} is not one of ${groupLayouts.join(", ")}.`,
+    });
+  }
+
+  if (!group.items.length) {
+    issues.push({
+      severity: "error",
+      title: "No group items",
+      detail: "A group needs at least one component placement.",
+    });
+  }
+
+  group.items.forEach((item) => {
+    if (!item.role.trim()) {
+      issues.push({
+        severity: "warning",
+        title: "Missing role label",
+        detail: `${item.component}:${item.state} does not describe what it does in the area.`,
+      });
+    } else if (roles.has(item.role.toLowerCase())) {
+      issues.push({
+        severity: "warning",
+        title: "Duplicate role",
+        detail: `${item.role} appears more than once in this group.`,
+      });
+    } else {
+      roles.add(item.role.toLowerCase());
+    }
+
+    const component = componentMap.get(item.component);
+    if (!component) {
+      issues.push({
+        severity: "error",
+        title: "Missing component",
+        detail: `${item.component} is not defined in metadata/components.`,
+      });
+      return;
+    }
+
+    if (!component.states.some((state) => state.id === item.state)) {
+      issues.push({
+        severity: "error",
+        title: "Missing state",
+        detail: `${item.component} does not define state ${item.state}.`,
+      });
+    }
+  });
+
+  return {
+    status: issues.some((issue) => issue.severity === "error") ? "error" : issues.some((issue) => issue.severity === "warning") ? "warning" : "ready",
+    issueCount: issues.length,
+    issues,
+  };
+}
+
+function readBrowserMetadata<T>(kind: "components" | "groups" | "themes"): T[] {
+  return Object.entries(metadataModules)
+    .filter(([path]) => path.includes(`/metadata/${kind}/`) || path.includes(`\\metadata\\${kind}\\`))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, content]) => parseToml(content) as T);
+}
+
+function parseToml(content: string): TomlObject {
+  const root: TomlObject = {};
+  let target: TomlObject = root;
+
+  content.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+
+    const arrayMatch = trimmed.match(/^\[\[(.+)\]\]$/);
+    if (arrayMatch) {
+      const key = camelCase(arrayMatch[1]);
+      const items = (root[key] as TomlObject[] | undefined) ?? [];
+      target = {};
+      items.push(target);
+      root[key] = items;
+      return;
+    }
+
+    const sectionMatch = trimmed.match(/^\[(.+)\]$/);
+    if (sectionMatch) {
+      const key = camelCase(sectionMatch[1]);
+      target = {};
+      root[key] = target;
+      return;
+    }
+
+    const separator = trimmed.indexOf("=");
+    if (separator === -1) return;
+
+    const key = camelCase(trimmed.slice(0, separator).trim());
+    target[key] = parseTomlValue(trimmed.slice(separator + 1).trim());
+  });
+
+  return root;
+}
+
+function parseTomlValue(value: string): TomlValue {
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1);
+  }
+
+  if (value.startsWith("[") && value.endsWith("]")) {
+    const inner = value.slice(1, -1).trim();
+    if (!inner) return [];
+    return inner.split(",").map((item) => String(parseTomlValue(item.trim())));
+  }
+
+  if (value.startsWith("{") && value.endsWith("}")) {
+    const output: Record<string, string> = {};
+    splitTomlInline(value.slice(1, -1)).forEach((entry) => {
+      const separator = entry.indexOf("=");
+      if (separator === -1) return;
+      output[camelCase(entry.slice(0, separator).trim())] = String(parseTomlValue(entry.slice(separator + 1).trim()));
+    });
+    return output;
+  }
+
+  if (value === "true") return true;
+  if (value === "false") return false;
+
+  const numberValue = Number(value);
+  return Number.isNaN(numberValue) ? value : numberValue;
+}
+
+function splitTomlInline(value: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let inString = false;
+
+  for (const character of value) {
+    if (character === '"') inString = !inString;
+    if (character === "," && !inString) {
+      parts.push(current.trim());
+      current = "";
+    } else {
+      current += character;
+    }
+  }
+
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+function camelCase(value: string) {
+  return value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function clone<T>(value: T): T {
+  return structuredClone(value);
+}
+
 function App() {
   const [components, setComponents] = useState<ComponentSummary[]>([]);
   const [componentFiles, setComponentFiles] = useState<Record<string, ComponentFile>>({});
@@ -173,6 +565,7 @@ function App() {
   const [groupFiles, setGroupFiles] = useState<Record<string, GroupFile>>({});
   const [themes, setThemes] = useState<ThemeSummary[]>([]);
   const [activeLibrary, setActiveLibrary] = useState<"components" | "groups">("components");
+  const [libraryQuery, setLibraryQuery] = useState("");
   const [selectedComponentId, setSelectedComponentId] = useState("button");
   const [selectedGroupId, setSelectedGroupId] = useState("settings-row");
   const [selectedThemeId, setSelectedThemeId] = useState("light");
@@ -193,10 +586,12 @@ function App() {
   const [catalogResults, setCatalogResults] = useState<CatalogResult[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [isGroupComposerOpen, setIsGroupComposerOpen] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState<GroupFile>(() => emptyGroupDraft());
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [groupValidation, setGroupValidation] = useState<GroupValidation | null>(null);
   const [draftValidation, setDraftValidation] = useState<GroupValidation | null>(null);
+  const [hasReviewedDraftWarnings, setHasReviewedDraftWarnings] = useState(false);
 
   useEffect(() => {
     async function boot() {
@@ -306,7 +701,7 @@ function App() {
 
     const timeout = window.setTimeout(() => {
       invoke<GroupValidation>("validate_group", { group: groupDraft })
-        .then((validation) => setDraftValidation(validation))
+        .then((validation) => setDraftValidation(addDraftNameConflict(validation, groupDraft, groups, editingGroupId)))
         .catch(() =>
           setDraftValidation({
             status: "error",
@@ -323,7 +718,12 @@ function App() {
     }, 120);
 
     return () => window.clearTimeout(timeout);
-  }, [groupDraft, isGroupComposerOpen]);
+  }, [editingGroupId, groupDraft, groups, isGroupComposerOpen]);
+
+  useEffect(() => {
+    setHasReviewedDraftWarnings(false);
+    setSaveMessage(null);
+  }, [groupDraft]);
 
   useEffect(() => {
     if (!selectedThemeId) return;
@@ -370,6 +770,25 @@ function App() {
   }, [catalogQuery, catalogType, isCatalogOpen, status?.indexInitialized]);
 
   const themeVars = useMemo(() => (theme ? themeStyle(theme) : {}), [theme]);
+  const filteredComponents = useMemo(
+    () => filterLibraryItems(components, libraryQuery, (item) => `${item.name} ${item.description}`),
+    [components, libraryQuery],
+  );
+  const filteredGroups = useMemo(
+    () => filterLibraryItems(groups, libraryQuery, (item) => `${item.name} ${item.description} ${item.layout}`),
+    [groups, libraryQuery],
+  );
+  const visualChecks = useMemo(
+    () =>
+      buildVisualChecks({
+        component: activeLibrary === "components" ? component : null,
+        group: activeLibrary === "groups" && !isGroupBoardOpen ? group : null,
+        groupValidation,
+        props: propValues,
+        theme,
+      }),
+    [activeLibrary, component, group, groupValidation, isGroupBoardOpen, propValues, theme],
+  );
 
   function applyState(state: ComponentState) {
     setSelectedStateId(state.id);
@@ -401,18 +820,20 @@ function App() {
     }
   }
 
-  function startGroupComposer(fromCurrent = false) {
-    if (fromCurrent && group) {
+  function startGroupComposer(mode: "new" | "copy" | "edit" = "new") {
+    if ((mode === "copy" || mode === "edit") && group) {
       setGroupDraft({
         group: {
           ...group.group,
-          name: `${group.group.name} Copy`,
-          id: "",
+          name: mode === "copy" ? `${group.group.name} Copy` : group.group.name,
+          id: mode === "edit" ? group.group.id : "",
         },
         items: group.items.map((item) => ({ ...item })),
       });
+      setEditingGroupId(mode === "edit" ? group.group.id : null);
     } else {
       setGroupDraft(emptyGroupDraft());
+      setEditingGroupId(null);
     }
 
     setActiveLibrary("groups");
@@ -423,12 +844,26 @@ function App() {
   }
 
   async function saveGroupDraft() {
+    if (draftValidation?.status === "error") {
+      setSaveMessage("Resolve blocking issues before saving this group.");
+      return;
+    }
+
+    if (draftValidation?.status === "warning" && !hasReviewedDraftWarnings) {
+      setHasReviewedDraftWarnings(true);
+      setSaveMessage("Warnings reviewed. Save again to keep them and continue.");
+      return;
+    }
+
     try {
-      const saved = await invoke<GroupFile>("save_group", { group: groupDraft });
+      const saved = editingGroupId
+        ? await invoke<GroupFile>("update_group", { originalGroupId: editingGroupId, group: groupDraft })
+        : await invoke<GroupFile>("save_group", { group: groupDraft });
       await refreshGroups();
       setSelectedGroupId(saved.group.id);
       setGroup(saved);
       setIsGroupComposerOpen(false);
+      setEditingGroupId(null);
       setSaveMessage(`Saved ${saved.group.name}`);
       const environment = await invoke<EnvironmentStatus>("initialize_local_index");
       setStatus(environment);
@@ -438,7 +873,11 @@ function App() {
   }
 
   const activeTitle =
-    activeLibrary === "groups" && isGroupBoardOpen
+    isGroupComposerOpen
+      ? editingGroupId
+        ? "Edit Group"
+        : "New Group"
+      : activeLibrary === "groups" && isGroupBoardOpen
       ? "Group Board"
       : activeLibrary === "groups"
       ? group?.group.name ?? "Loading"
@@ -523,9 +962,19 @@ function App() {
               Groups
             </button>
           </div>
+          <label className="library-filter">
+            <Search size={16} />
+            <input
+              aria-label={`Filter ${activeLibrary}`}
+              onChange={(event) => setLibraryQuery(event.currentTarget.value)}
+              placeholder={`Filter ${activeLibrary}`}
+              type="search"
+              value={libraryQuery}
+            />
+          </label>
           <div className="component-list">
             {activeLibrary === "components"
-              ? components.map((item) => (
+              ? filteredComponents.map((item) => (
                   <button
                     className={`component-row ${item.id === selectedComponentId ? "selected" : ""}`}
                     key={item.id}
@@ -539,7 +988,7 @@ function App() {
                     <em>{item.stateCount}</em>
                   </button>
                 ))
-              : groups.map((item) => (
+              : filteredGroups.map((item) => (
                   <button
                     className={`component-row ${item.id === selectedGroupId && !isGroupBoardOpen ? "selected" : ""}`}
                     key={item.id}
@@ -556,6 +1005,8 @@ function App() {
                     <em>{item.itemCount}</em>
                   </button>
                 ))}
+            {!isLoading && activeLibrary === "components" && !filteredComponents.length && <p className="catalog-note">No matching components.</p>}
+            {!isLoading && activeLibrary === "groups" && !filteredGroups.length && <p className="catalog-note">No matching groups.</p>}
             {isLoading && <LoadingRows />}
           </div>
         </aside>
@@ -686,9 +1137,14 @@ function App() {
             <GroupComposer
               componentFiles={componentFiles}
               draft={groupDraft}
+              hasReviewedWarnings={hasReviewedDraftWarnings}
+              isEditing={Boolean(editingGroupId)}
               message={saveMessage}
               validation={draftValidation}
-              onCancel={() => setIsGroupComposerOpen(false)}
+              onCancel={() => {
+                setIsGroupComposerOpen(false);
+                setEditingGroupId(null);
+              }}
               onChange={setGroupDraft}
               onSave={saveGroupDraft}
             />
@@ -706,9 +1162,17 @@ function App() {
           ) : activeLibrary === "groups" && isGroupBoardOpen ? (
             <BoardInspector groups={groups} />
           ) : activeLibrary === "groups" && group ? (
-            <GroupInspector group={group} componentFiles={componentFiles} validation={groupValidation} onCopy={() => startGroupComposer(true)} />
+            <GroupInspector
+              group={group}
+              componentFiles={componentFiles}
+              validation={groupValidation}
+              visualChecks={visualChecks}
+              onCopy={() => startGroupComposer("copy")}
+              onEdit={() => startGroupComposer("edit")}
+            />
           ) : (
             <div className="controls">
+              <VisualCheckPanel checks={visualChecks} />
               {component?.props.map((prop) => (
                 <PropControl
                   key={prop.id}
@@ -730,6 +1194,39 @@ function defaultProps(component: ComponentFile | null) {
   if (!component) return {};
 
   return Object.fromEntries(component.props.map((prop) => [prop.id, prop.default]));
+}
+
+function filterLibraryItems<T>(items: T[], query: string, getSearchText: (item: T) => string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return items;
+
+  return items.filter((item) => getSearchText(item).toLowerCase().includes(normalizedQuery));
+}
+
+function addDraftNameConflict(
+  validation: GroupValidation,
+  draft: GroupFile,
+  groups: GroupSummary[],
+  editingGroupId: string | null,
+): GroupValidation {
+  const draftId = slugify(draft.group.name);
+  const conflict = draftId && groups.some((group) => group.id === draftId && group.id !== editingGroupId);
+  if (!conflict) return validation;
+
+  const issues = [
+    ...validation.issues,
+    {
+      severity: "error" as const,
+      title: "Duplicate group name",
+      detail: `${draft.group.name} would use the same metadata id as an existing group.`,
+    },
+  ];
+
+  return {
+    status: "error",
+    issueCount: issues.length,
+    issues,
+  };
 }
 
 function themeStyle(theme: ThemeFile) {
@@ -803,23 +1300,33 @@ function GroupInspector({
   group,
   componentFiles,
   validation,
+  visualChecks,
   onCopy,
+  onEdit,
 }: {
   group: GroupFile;
   componentFiles: Record<string, ComponentFile>;
   validation: GroupValidation | null;
+  visualChecks: VisualCheck[];
   onCopy: () => void;
+  onEdit: () => void;
 }) {
   return (
     <div className="controls">
       <section className="group-summary">
         <strong>{group.group.layout}</strong>
         <p>{group.group.description}</p>
+        <button className="secondary-command" onClick={onEdit} type="button">
+          <Pencil size={15} />
+          Edit Group
+        </button>
         <button className="secondary-command" onClick={onCopy} type="button">
+          <Plus size={15} />
           Copy to New Group
         </button>
       </section>
       <ValidationPanel validation={validation} />
+      <VisualCheckPanel checks={visualChecks} />
       {group.items.map((item) => {
         const component = componentFiles[item.component];
         const state = component?.states.find((candidate) => candidate.id === item.state);
@@ -839,6 +1346,8 @@ function GroupInspector({
 function GroupComposer({
   componentFiles,
   draft,
+  hasReviewedWarnings,
+  isEditing,
   message,
   validation,
   onCancel,
@@ -847,6 +1356,8 @@ function GroupComposer({
 }: {
   componentFiles: Record<string, ComponentFile>;
   draft: GroupFile;
+  hasReviewedWarnings: boolean;
+  isEditing: boolean;
   message: string | null;
   validation: GroupValidation | null;
   onCancel: () => void;
@@ -854,6 +1365,9 @@ function GroupComposer({
   onSave: () => void;
 }) {
   const componentOptions = Object.values(componentFiles);
+  const hasBlockingIssues = validation?.status === "error";
+  const needsWarningReview = validation?.status === "warning" && !hasReviewedWarnings;
+  const saveLabel = needsWarningReview ? "Review Warnings" : isEditing ? "Update Group" : "Save Group";
 
   function updateGroup(updates: Partial<GroupFile["group"]>) {
     onChange({ ...draft, group: { ...draft.group, ...updates } });
@@ -899,6 +1413,26 @@ function GroupComposer({
     });
   }
 
+  function duplicateItem(index: number) {
+    const item = draft.items[index];
+    if (!item) return;
+
+    onChange({
+      ...draft,
+      items: [...draft.items.slice(0, index + 1), { ...item, role: `${item.role} Copy` }, ...draft.items.slice(index + 1)],
+    });
+  }
+
+  function moveItem(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= draft.items.length) return;
+
+    const items = draft.items.map((item) => ({ ...item }));
+    const [item] = items.splice(index, 1);
+    items.splice(nextIndex, 0, item);
+    onChange({ ...draft, items });
+  }
+
   return (
     <div className="composer-panel">
       <label className="field-control">
@@ -912,9 +1446,11 @@ function GroupComposer({
       <label className="field-control">
         <span>Layout</span>
         <select onChange={(event) => updateGroup({ layout: event.currentTarget.value as GroupFile["group"]["layout"] })} value={draft.group.layout}>
-          <option value="row">row</option>
-          <option value="grid">grid</option>
-          <option value="stack">stack</option>
+          {groupLayouts.map((layout) => (
+            <option key={layout} value={layout}>
+              {layout}
+            </option>
+          ))}
         </select>
       </label>
 
@@ -948,9 +1484,26 @@ function GroupComposer({
                   ))}
                 </select>
               </label>
-              <button className="secondary-command" disabled={draft.items.length <= 1} onClick={() => removeItem(index)} type="button">
-                Remove
-              </button>
+              <div className="composer-item-actions">
+                <button className="icon-command" disabled={index === 0} onClick={() => moveItem(index, -1)} title="Move up" type="button">
+                  <ArrowUp size={15} />
+                </button>
+                <button
+                  className="icon-command"
+                  disabled={index === draft.items.length - 1}
+                  onClick={() => moveItem(index, 1)}
+                  title="Move down"
+                  type="button"
+                >
+                  <ArrowDown size={15} />
+                </button>
+                <button className="icon-command" onClick={() => duplicateItem(index)} title="Duplicate item" type="button">
+                  <Copy size={15} />
+                </button>
+                <button className="secondary-command" disabled={draft.items.length <= 1} onClick={() => removeItem(index)} type="button">
+                  Remove
+                </button>
+              </div>
             </section>
           );
         })}
@@ -965,11 +1518,11 @@ function GroupComposer({
         <button className="secondary-command" onClick={onCancel} type="button">
           Cancel
         </button>
-        <button className="primary-command" onClick={onSave} type="button">
-          Save Group
+        <button className="primary-command" disabled={hasBlockingIssues} onClick={onSave} type="button">
+          {saveLabel}
         </button>
       </div>
-      {message && <p className="catalog-note">{message}</p>}
+      {message && <p className={message.includes("Resolve") || message.includes("already exists") ? "catalog-error" : "catalog-note"}>{message}</p>}
     </div>
   );
 }
@@ -981,7 +1534,7 @@ function ValidationPanel({ validation }: { validation: GroupValidation | null })
 
   return (
     <section className={`validation-panel ${validation.status}`}>
-      <strong>{validation.status === "ready" ? "Ready" : validation.status}</strong>
+      <strong>{validationSummary(validation)}</strong>
       {validation.issueCount === 0 ? (
         <p>No structural issues found.</p>
       ) : (
@@ -991,6 +1544,180 @@ function ValidationPanel({ validation }: { validation: GroupValidation | null })
             <p>{issue.detail}</p>
           </article>
         ))
+      )}
+    </section>
+  );
+}
+
+function validationSummary(validation: GroupValidation) {
+  if (validation.issueCount === 0) return "Ready";
+
+  const errorCount = validation.issues.filter((issue) => issue.severity === "error").length;
+  const warningCount = validation.issues.filter((issue) => issue.severity === "warning").length;
+  const parts = [];
+  if (errorCount) parts.push(`${errorCount} ${errorCount === 1 ? "error" : "errors"}`);
+  if (warningCount) parts.push(`${warningCount} ${warningCount === 1 ? "warning" : "warnings"}`);
+  return parts.join(", ");
+}
+
+function buildVisualChecks({
+  component,
+  group,
+  groupValidation,
+  props,
+  theme,
+}: {
+  component: ComponentFile | null;
+  group: GroupFile | null;
+  groupValidation: GroupValidation | null;
+  props: Record<string, string>;
+  theme: ThemeFile | null;
+}): VisualCheck[] {
+  const checks: VisualCheck[] = [];
+
+  if (!theme) return checks;
+
+  checks.push(contrastCheck("Surface text contrast", theme.colors.text, theme.colors.surface, 4.5));
+  checks.push(contrastCheck("Muted text contrast", theme.colors.muted, theme.colors.surface, 3));
+
+  if (component) {
+    checks.push(...componentLabelChecks(component, props));
+
+    if (component.component.id === "button") {
+      const variant = props.variant ?? "primary";
+      const background = theme.colors[variant === "danger" ? "danger" : variant === "secondary" ? "secondary" : "primary"];
+      checks.push(contrastCheck("Button text contrast", "#ffffff", background, 4.5));
+
+      if ((props.size ?? "medium") === "small") {
+        checks.push({
+          status: "ready",
+          title: "Button target size",
+          detail: "Small buttons render at 34px high, above the 24px minimum target baseline.",
+        });
+      }
+    }
+  }
+
+  if (group) {
+    if (!group.items.length) {
+      checks.push({
+        status: "error",
+        title: "Empty group preview",
+        detail: "This group has no component placements to render.",
+      });
+    } else {
+      checks.push({
+        status: "ready",
+        title: "Group preview content",
+        detail: `${group.items.length} component placements are available for this layout.`,
+      });
+    }
+
+    groupValidation?.issues.forEach((issue) => {
+      checks.push({
+        status: issue.severity,
+        title: issue.title,
+        detail: issue.detail,
+      });
+    });
+  }
+
+  return checks;
+}
+
+function componentLabelChecks(component: ComponentFile, props: Record<string, string>): VisualCheck[] {
+  const labelProps = component.props.filter((prop) => ["label", "title", "helper", "description", "placeholder"].includes(prop.id));
+  const emptyLabels = labelProps.filter((prop) => !String(props[prop.id] ?? prop.default).trim());
+
+  if (!emptyLabels.length) {
+    return [
+      {
+        status: "ready",
+        title: "Visible copy",
+        detail: "Label-like props have non-empty preview text.",
+      },
+    ];
+  }
+
+  return emptyLabels.map((prop) => ({
+    status: "warning",
+    title: "Empty visible copy",
+    detail: `${component.component.name} has no ${prop.label.toLowerCase()} text in this state.`,
+  }));
+}
+
+function contrastCheck(title: string, foreground: string, background: string, threshold: number): VisualCheck {
+  const ratio = contrastRatio(foreground, background);
+  if (ratio === null) {
+    return {
+      status: "warning",
+      title,
+      detail: `Could not calculate contrast for ${foreground} on ${background}.`,
+    };
+  }
+
+  return {
+    status: ratio >= threshold ? "ready" : "warning",
+    title,
+    detail: `${ratio.toFixed(1)}:1 contrast against a ${threshold}:1 target.`,
+  };
+}
+
+function contrastRatio(foreground: string, background: string) {
+  const fg = hexToRgb(foreground);
+  const bg = hexToRgb(background);
+  if (!fg || !bg) return null;
+
+  const lighter = Math.max(relativeLuminance(fg), relativeLuminance(bg));
+  const darker = Math.min(relativeLuminance(fg), relativeLuminance(bg));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function hexToRgb(hex: string) {
+  const value = hex.trim().replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(value)) return null;
+
+  return {
+    r: Number.parseInt(value.slice(0, 2), 16),
+    g: Number.parseInt(value.slice(2, 4), 16),
+    b: Number.parseInt(value.slice(4, 6), 16),
+  };
+}
+
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }) {
+  return [r, g, b]
+    .map((channel) => {
+      const value = channel / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    })
+    .reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index], 0);
+}
+
+function VisualCheckPanel({ checks }: { checks: VisualCheck[] }) {
+  const errorCount = checks.filter((check) => check.status === "error").length;
+  const warningCount = checks.filter((check) => check.status === "warning").length;
+  const status = errorCount ? "error" : warningCount ? "warning" : "ready";
+  const summary = errorCount
+    ? `${errorCount} ${errorCount === 1 ? "issue" : "issues"}`
+    : warningCount
+    ? `${warningCount} ${warningCount === 1 ? "warning" : "warnings"}`
+    : "Ready";
+
+  return (
+    <section className={`visual-check-panel ${status}`} aria-label="Visual checks">
+      <header>
+        <ShieldCheck size={16} />
+        <strong>{summary}</strong>
+      </header>
+      {checks.length ? (
+        checks.map((check) => (
+          <article className={`visual-check ${check.status}`} key={`${check.title}-${check.detail}`}>
+            <span>{check.title}</span>
+            <p>{check.detail}</p>
+          </article>
+        ))
+      ) : (
+        <p>Visual checks are waiting for preview metadata.</p>
       )}
     </section>
   );
@@ -1142,6 +1869,14 @@ function PreviewRenderer({ component, props }: { component: string; props: Recor
     return <PreviewBadge props={props} />;
   }
 
+  if (component === "input") {
+    return <PreviewInput props={props} />;
+  }
+
+  if (component === "toggle") {
+    return <PreviewToggle props={props} />;
+  }
+
   return <PreviewButton props={props} />;
 }
 
@@ -1264,6 +1999,44 @@ function PreviewBadge({ props }: { props: Record<string, string> }) {
       <span className="sample-badge info soft">React</span>
       <span className="sample-badge warning soft">Svelte later</span>
     </div>
+  );
+}
+
+function PreviewInput({ props }: { props: Record<string, string> }) {
+  const status = props.status ?? "default";
+
+  return (
+    <label className={`sample-input ${status} ${booleanValue(props.disabled) ? "disabled" : ""}`}>
+      <span>{props.label}</span>
+      <input
+        disabled={booleanValue(props.disabled)}
+        placeholder={props.placeholder}
+        readOnly
+        type="text"
+        value={props.value ?? ""}
+      />
+      <small>{props.helper}</small>
+    </label>
+  );
+}
+
+function PreviewToggle({ props }: { props: Record<string, string> }) {
+  const checked = booleanValue(props.checked);
+
+  return (
+    <button
+      className={`sample-toggle ${props.tone ?? "default"} ${checked ? "checked" : ""}`}
+      disabled={booleanValue(props.disabled)}
+      type="button"
+    >
+      <span className="toggle-copy">
+        <strong>{props.label}</strong>
+        <small>{props.description}</small>
+      </span>
+      <span className="toggle-track" aria-hidden="true">
+        <i />
+      </span>
+    </button>
   );
 }
 

@@ -205,6 +205,16 @@ struct IndexRecord {
     body: String,
 }
 
+const SUPPORTED_GROUP_LAYOUTS: &[&str] = &[
+    "row",
+    "grid",
+    "stack",
+    "toolbar",
+    "form-row",
+    "dialog-footer",
+    "table-header",
+];
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IndexSearchResult {
@@ -257,12 +267,33 @@ fn load_group(app: AppHandle, group_id: String) -> Result<GroupFile, String> {
 
 #[tauri::command]
 fn save_group(app: AppHandle, group: GroupFile) -> Result<GroupFile, String> {
+    write_group_file(&app, group, None)
+}
+
+#[tauri::command]
+fn update_group(
+    app: AppHandle,
+    original_group_id: String,
+    group: GroupFile,
+) -> Result<GroupFile, String> {
+    if original_group_id != slugify(&original_group_id) {
+        return Err("Original group id is not a valid metadata id.".to_string());
+    }
+
+    write_group_file(&app, group, Some(original_group_id))
+}
+
+fn write_group_file(
+    app: &AppHandle,
+    group: GroupFile,
+    original_group_id: Option<String>,
+) -> Result<GroupFile, String> {
     let mut group = group;
     group.group.id = slugify(&group.group.name);
     if group.group.id.is_empty() {
         return Err("Group name must contain at least one letter or number.".to_string());
     }
-    let validation = validate_group_file(&app, &group)?;
+    let validation = validate_group_file(app, &group)?;
     if validation.issues.iter().any(|issue| issue.severity == "error") {
         let details = validation
             .issues
@@ -274,14 +305,35 @@ fn save_group(app: AppHandle, group: GroupFile) -> Result<GroupFile, String> {
         return Err(format!("Group has blocking validation issues: {details}"));
     }
 
-    let dir = writable_metadata_dir(&app).join("groups");
+    let dir = writable_metadata_dir(app).join("groups");
     fs::create_dir_all(&dir)
         .map_err(|error| format!("Could not create group metadata directory {}: {error}", dir.display()))?;
     let path = dir.join(format!("{}.toml", group.group.id));
+
+    if original_group_id.as_deref() != Some(group.group.id.as_str()) && path.exists() {
+        return Err(format!(
+            "A group named {} already exists. Choose a different name before saving.",
+            group.group.name
+        ));
+    }
+
     let toml = toml::to_string_pretty(&group)
         .map_err(|error| format!("Could not serialize group metadata: {error}"))?;
     fs::write(&path, toml)
         .map_err(|error| format!("Could not save group metadata {}: {error}", path.display()))?;
+
+    if let Some(original_group_id) = original_group_id {
+        let original_path = dir.join(format!("{original_group_id}.toml"));
+        if original_path != path && original_path.exists() {
+            fs::remove_file(&original_path).map_err(|error| {
+                format!(
+                    "Saved {}, but could not remove renamed group file {}: {error}",
+                    group.group.name,
+                    original_path.display()
+                )
+            })?;
+        }
+    }
 
     Ok(group)
 }
@@ -459,11 +511,15 @@ fn validate_group_against_components(
         .map(|component| (component.component.id.as_str(), component))
         .collect::<BTreeMap<_, _>>();
 
-    if !["row", "grid", "stack"].contains(&group.group.layout.as_str()) {
+    if !SUPPORTED_GROUP_LAYOUTS.contains(&group.group.layout.as_str()) {
         issues.push(GroupValidationIssue {
             severity: "error".to_string(),
             title: "Unsupported layout".to_string(),
-            detail: format!("{} is not one of row, grid, or stack.", group.group.layout),
+            detail: format!(
+                "{} is not one of {}.",
+                group.group.layout,
+                SUPPORTED_GROUP_LAYOUTS.join(", ")
+            ),
         });
     }
 
@@ -747,6 +803,7 @@ pub fn run() {
             list_groups,
             load_group,
             save_group,
+            update_group,
             validate_group,
             list_themes,
             load_theme,
@@ -770,7 +827,7 @@ mod tests {
             .join("components");
         let components: Vec<ComponentFile> = read_all_toml(&dir).expect("components should parse");
 
-        assert_eq!(components.len(), 3);
+        assert_eq!(components.len(), 5);
         assert!(components.iter().all(|component| component.framework.react));
         assert!(components.iter().all(|component| !component.props.is_empty()));
         assert!(components.iter().all(|component| !component.states.is_empty()));
@@ -797,7 +854,7 @@ mod tests {
             .join("groups");
         let groups: Vec<GroupFile> = read_all_toml(&dir).expect("groups should parse");
 
-        assert_eq!(groups.len(), 3);
+        assert_eq!(groups.len(), 8);
         assert!(groups.iter().all(|group| !group.items.is_empty()));
         assert!(groups.iter().all(|group| !group.group.layout.is_empty()));
     }

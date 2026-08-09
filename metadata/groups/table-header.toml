@@ -1,0 +1,21 @@
+[group]
+id = "table-header"
+name = "Table Header"
+description = "A dense table control strip with a filter input, validation state, and batch action."
+layout = "table-header"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "input"
+state = "warning-empty"
+role = "Filter"
+
+[[items]]
+component = "badge"
+state = "solid-success"
+role = "Rows"
+
+[[items]]
+component = "button"
+state = "secondary-disabled"
+role = "Batch"

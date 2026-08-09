@@ -1,0 +1,55 @@
+[component]
+id = "toggle"
+name = "Toggle"
+description = "Binary setting control for enabled, disabled, and attention states."
+themes = ["light", "dark", "aurora"]
+
+[framework]
+react = true
+svelte = false
+
+[[props]]
+id = "label"
+label = "Label"
+kind = "text"
+default = "Auto index"
+
+[[props]]
+id = "description"
+label = "Description"
+kind = "text"
+default = "Refresh the local catalog after metadata changes."
+
+[[props]]
+id = "checked"
+label = "Checked"
+kind = "boolean"
+default = "true"
+
+[[props]]
+id = "disabled"
+label = "Disabled"
+kind = "boolean"
+default = "false"
+
+[[props]]
+id = "tone"
+label = "Tone"
+kind = "enum"
+default = "default"
+values = ["default", "success", "warning"]
+
+[[states]]
+id = "enabled"
+label = "Enabled"
+props = { label = "Auto index", description = "Refresh the local catalog after metadata changes.", checked = "true", disabled = "false", tone = "success" }
+
+[[states]]
+id = "disabled-off"
+label = "Disabled Off"
+props = { label = "Embedding search", description = "Waiting for a local embedding model.", checked = "false", disabled = "true", tone = "default" }
+
+[[states]]
+id = "warning-on"
+label = "Warning On"
+props = { label = "Strict contrast", description = "Flag previews that need manual review.", checked = "true", disabled = "false", tone = "warning" }

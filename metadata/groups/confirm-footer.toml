@@ -1,0 +1,21 @@
+[group]
+id = "confirm-footer"
+name = "Confirm Footer"
+description = "A dialog-style footer that pairs warning context with secondary and destructive actions."
+layout = "dialog-footer"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "badge"
+state = "soft-danger"
+role = "Risk"
+
+[[items]]
+component = "button"
+state = "secondary-disabled"
+role = "Cancel"
+
+[[items]]
+component = "button"
+state = "danger-loading"
+role = "Confirm"
