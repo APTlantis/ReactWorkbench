@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   AlertTriangle,
   ArrowDown,
@@ -10,6 +11,7 @@ import {
   Copy,
   Database,
   FileCode2,
+  FolderOpen,
   GalleryHorizontalEnd,
   LayoutDashboard,
   Loader2,
@@ -160,6 +162,62 @@ type VisualCheck = {
   detail: string;
 };
 
+type ScreenshotReportSummary = {
+  reportPath: string;
+  htmlReportPath: string;
+  markdownReportPath: string;
+  comparedAt: string;
+  baselineSnapshotId: string;
+  latestSnapshotId: string;
+  baselineDir: string;
+  latestDir: string;
+  status: "ready" | "tolerated" | "review";
+  statusTitle: string;
+  statusDetail: string;
+  thresholds: {
+    pixelColorDistance: number;
+    pixelDiffRatio: number;
+  };
+  summary: {
+    added: number;
+    removed: number;
+    changed: number;
+    tolerated: number;
+    unchanged: number;
+    totalCompared: number;
+    changedPixels: number;
+    toleratedPixels: number;
+  };
+  reviewItems: ScreenshotReviewItem[];
+  reviewDecisions: ScreenshotReviewDecision[];
+};
+
+type ScreenshotReviewItem = {
+  status: "changed" | "added" | "removed" | "tolerated";
+  theme: string;
+  kind: string;
+  name: string;
+  relativePath: string;
+  previewPath: string | null;
+  baselinePath: string | null;
+  latestPath: string | null;
+  diffPath: string | null;
+  changedPixels: number | null;
+  changedRatio: number | null;
+};
+
+type ScreenshotReviewDecision = {
+  key: string;
+  decision: ReviewDecision;
+};
+
+type ScreenshotReviewExportResult = {
+  path: string;
+  accepted: number;
+  dismissed: number;
+  decisionCount: number;
+};
+
 type GroupLayout = "row" | "grid" | "stack" | "toolbar" | "form-row" | "dialog-footer" | "table-header";
 type InvokeArgs = Record<string, unknown>;
 type TomlValue = string | number | boolean | string[] | Record<string, string>;
@@ -232,6 +290,10 @@ async function browserInvoke<T>(command: string, args: InvokeArgs): Promise<T> {
       return browserEnvironmentStatus() as T;
     case "search_index":
       return searchBrowserIndex(String(args.query ?? ""), String(args.recordType ?? "all")) as T;
+    case "latest_screenshot_report":
+      return null as T;
+    case "export_screenshot_review_decisions":
+      throw new Error("Review decision export is available in the desktop app.");
     default:
       throw new Error(`Browser preview does not support command: ${command}`);
   }
@@ -581,10 +643,13 @@ function App() {
   const [isComparingThemes, setIsComparingThemes] = useState(false);
   const [isGroupBoardOpen, setIsGroupBoardOpen] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogType, setCatalogType] = useState("all");
   const [catalogResults, setCatalogResults] = useState<CatalogResult[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [screenshotReport, setScreenshotReport] = useState<ScreenshotReportSummary | null>(null);
+  const [screenshotReportError, setScreenshotReportError] = useState<string | null>(null);
   const [isGroupComposerOpen, setIsGroupComposerOpen] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState<GroupFile>(() => emptyGroupDraft());
@@ -596,17 +661,19 @@ function App() {
   useEffect(() => {
     async function boot() {
       try {
-        const [componentList, groupList, themeList, environment] = await Promise.all([
+        const [componentList, groupList, themeList, environment, latestReport] = await Promise.all([
           invoke<ComponentSummary[]>("list_components"),
           invoke<GroupSummary[]>("list_groups"),
           invoke<ThemeSummary[]>("list_themes"),
           invoke<EnvironmentStatus>("initialize_local_index"),
+          invoke<ScreenshotReportSummary | null>("latest_screenshot_report"),
         ]);
 
         setComponents(componentList);
         setGroups(groupList);
         setThemes(themeList);
         setStatus(environment);
+        setScreenshotReport(latestReport);
         setSelectedComponentId(componentList[0]?.id ?? "button");
         setSelectedGroupId(groupList[0]?.id ?? "settings-row");
         setSelectedThemeId(themeList[0]?.id ?? "light");
@@ -807,12 +874,14 @@ function App() {
       setActiveLibrary("components");
       setSelectedComponentId(id);
       setIsGroupBoardOpen(false);
+      setIsReportOpen(false);
     }
 
     if (result.recordType === "group") {
       setActiveLibrary("groups");
       setSelectedGroupId(id);
       setIsGroupBoardOpen(false);
+      setIsReportOpen(false);
     }
 
     if (result.recordType === "theme") {
@@ -839,8 +908,27 @@ function App() {
     setActiveLibrary("groups");
     setIsGroupBoardOpen(false);
     setIsCatalogOpen(false);
+    setIsReportOpen(false);
     setIsGroupComposerOpen(true);
     setSaveMessage(null);
+  }
+
+  async function toggleReportPanel() {
+    const nextIsOpen = !isReportOpen;
+    setIsReportOpen(nextIsOpen);
+    if (!nextIsOpen) return;
+
+    setIsCatalogOpen(false);
+    setIsGroupComposerOpen(false);
+
+    try {
+      const latestReport = await invoke<ScreenshotReportSummary | null>("latest_screenshot_report");
+      setScreenshotReport(latestReport);
+      setScreenshotReportError(null);
+    } catch (caught) {
+      setScreenshotReport(null);
+      setScreenshotReportError(String(caught));
+    }
   }
 
   async function saveGroupDraft() {
@@ -916,6 +1004,7 @@ function App() {
               setActiveLibrary("groups");
               setIsGroupBoardOpen((current) => !current);
               setIsComparingThemes(false);
+              setIsReportOpen(false);
             }}
             title="Group board"
             type="button"
@@ -924,11 +1013,18 @@ function App() {
           </button>
           <button
             className={`icon-button ${isCatalogOpen ? "active" : ""}`}
-            onClick={() => setIsCatalogOpen((current) => !current)}
+            onClick={() => {
+              setIsCatalogOpen((current) => !current);
+              setIsReportOpen(false);
+              setIsGroupComposerOpen(false);
+            }}
             title="Catalog search"
             type="button"
           >
             <Search size={18} />
+          </button>
+          <button className={`icon-button ${isReportOpen ? "active" : ""}`} onClick={toggleReportPanel} title="Screenshot report" type="button">
+            <FileCode2 size={18} />
           </button>
           <button className={`icon-button ${isGroupComposerOpen ? "active" : ""}`} onClick={() => startGroupComposer()} title="New group" type="button">
             <Plus size={18} />
@@ -978,7 +1074,10 @@ function App() {
                   <button
                     className={`component-row ${item.id === selectedComponentId ? "selected" : ""}`}
                     key={item.id}
-                    onClick={() => setSelectedComponentId(item.id)}
+                    onClick={() => {
+                      setSelectedComponentId(item.id);
+                      setIsReportOpen(false);
+                    }}
                     type="button"
                   >
                     <span>
@@ -995,6 +1094,7 @@ function App() {
                     onClick={() => {
                       setSelectedGroupId(item.id);
                       setIsGroupBoardOpen(false);
+                      setIsReportOpen(false);
                     }}
                     type="button"
                   >
@@ -1159,6 +1259,8 @@ function App() {
               onQueryChange={setCatalogQuery}
               onTypeChange={setCatalogType}
             />
+          ) : isReportOpen ? (
+            <ScreenshotReportPanel error={screenshotReportError} report={screenshotReport} />
           ) : activeLibrary === "groups" && isGroupBoardOpen ? (
             <BoardInspector groups={groups} />
           ) : activeLibrary === "groups" && group ? (
@@ -1803,11 +1905,282 @@ function CatalogPanel({
   );
 }
 
+function ScreenshotReportPanel({ error, report }: { error: string | null; report: ScreenshotReportSummary | null }) {
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [reviewDecisions, setReviewDecisions] = useState<Record<string, ReviewDecision>>({});
+
+  useEffect(() => {
+    if (!report) {
+      setReviewDecisions({});
+      return;
+    }
+
+    const raw = window.localStorage.getItem(reportReviewStorageKey(report));
+    const exported = Object.fromEntries(report.reviewDecisions.map((item) => [item.key, item.decision]));
+    const local = raw ? JSON.parse(raw) : {};
+    const merged = { ...exported, ...local };
+    setReviewDecisions(merged);
+    if (Object.keys(merged).length) {
+      window.localStorage.setItem(reportReviewStorageKey(report), JSON.stringify(merged));
+    }
+  }, [report?.reportPath]);
+
+  async function runReportAction(action: () => Promise<void>) {
+    if (!isTauriRuntime()) {
+      setActionError("Open report actions are available in the desktop app.");
+      return;
+    }
+
+    try {
+      await action();
+      setActionError(null);
+    } catch (caught) {
+      setActionError(String(caught));
+    }
+  }
+
+  function setReviewDecision(item: ScreenshotReviewItem, decision: ReviewDecision | null) {
+    if (!report) return;
+
+    const key = reviewItemKey(item);
+    const next = { ...reviewDecisions };
+    if (decision) {
+      next[key] = decision;
+    } else {
+      delete next[key];
+    }
+
+    setReviewDecisions(next);
+    window.localStorage.setItem(reportReviewStorageKey(report), JSON.stringify(next));
+  }
+
+  async function exportReviewDecisions() {
+    if (!report) return;
+
+    const payload = reviewDecisionExportPayload(report, reviewDecisions);
+
+    if (!isTauriRuntime()) {
+      downloadJson(`review-decisions-${report.baselineSnapshotId}-to-${report.latestSnapshotId}.json`, payload);
+      setExportMessage(`Downloaded ${payload.decisions.length} review decisions.`);
+      setActionError(null);
+      return;
+    }
+
+    try {
+      const result = await invoke<ScreenshotReviewExportResult>("export_screenshot_review_decisions", { export: payload });
+      setExportMessage(`Exported ${result.decisionCount} review decisions to ${result.path}`);
+      setActionError(null);
+    } catch (caught) {
+      setExportMessage(null);
+      setActionError(String(caught));
+    }
+  }
+
+  if (error) {
+    return (
+      <div className="report-panel">
+        <p className="catalog-error">{error}</p>
+      </div>
+    );
+  }
+
+  if (!report) {
+    return (
+      <div className="report-panel">
+        <p className="catalog-note">No screenshot comparison report is available yet.</p>
+      </div>
+    );
+  }
+
+  const counts: Array<[string, number]> = [
+    ["Added", report.summary.added],
+    ["Removed", report.summary.removed],
+    ["Changed", report.summary.changed],
+    ["Tolerated", report.summary.tolerated],
+    ["Unchanged", report.summary.unchanged],
+    ["Total", report.summary.totalCompared],
+  ];
+  const acceptedCount = Object.values(reviewDecisions).filter((decision) => decision === "accepted").length;
+  const dismissedCount = Object.values(reviewDecisions).filter((decision) => decision === "dismissed").length;
+  const reviewedCount = acceptedCount + dismissedCount;
+
+  return (
+    <div className="report-panel">
+      <section className={`report-status ${report.status}`}>
+        <span>Screenshot report</span>
+        <strong>{report.statusTitle}</strong>
+        <p>{report.statusDetail}</p>
+      </section>
+      <section className="report-snapshot">
+        <span>Snapshot</span>
+        <strong>
+          {report.baselineSnapshotId} to {report.latestSnapshotId}
+        </strong>
+        <small>{new Date(report.comparedAt).toLocaleString()}</small>
+      </section>
+      <div className="report-count-grid">
+        {counts.map(([label, value]) => (
+          <section className="report-count" key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </section>
+        ))}
+      </div>
+      <section className="report-snapshot">
+        <span>Thresholds</span>
+        <strong>{formatPercent(report.thresholds.pixelDiffRatio)}</strong>
+        <small>Color distance {report.thresholds.pixelColorDistance}</small>
+      </section>
+      {report.reviewItems.length > 0 && (
+        <section className="report-review-progress">
+          <span>Review progress</span>
+          <strong>
+            {reviewedCount} of {report.reviewItems.length}
+          </strong>
+          <small>
+            {acceptedCount} accepted · {dismissedCount} dismissed
+          </small>
+          <button className="primary-command" disabled={reviewedCount === 0} onClick={exportReviewDecisions} type="button">
+            Export Decisions
+          </button>
+          {exportMessage && <p>{exportMessage}</p>}
+        </section>
+      )}
+      <section className="report-items">
+        <span>Review items</span>
+        {report.reviewItems.length ? (
+          report.reviewItems.map((item) => {
+            const decision = reviewDecisions[reviewItemKey(item)] ?? null;
+            return (
+            <article className={`report-item ${item.status} ${decision ?? ""}`} key={`${item.status}-${item.relativePath}`}>
+              <div>
+                <strong>{item.name}</strong>
+                <small>
+                  {item.status} · {item.theme} · {item.kind}
+                  {item.changedRatio !== null ? ` · ${formatPercent(item.changedRatio)}` : ""}
+                  {decision ? ` · ${decision}` : ""}
+                </small>
+              </div>
+              <code>{item.relativePath}</code>
+              <div className="report-decision-actions">
+                <button
+                  className={decision === "accepted" ? "secondary-command active" : "secondary-command"}
+                  onClick={() => setReviewDecision(item, decision === "accepted" ? null : "accepted")}
+                  type="button"
+                >
+                  Accept
+                </button>
+                <button
+                  className={decision === "dismissed" ? "secondary-command active" : "secondary-command"}
+                  onClick={() => setReviewDecision(item, decision === "dismissed" ? null : "dismissed")}
+                  type="button"
+                >
+                  Dismiss
+                </button>
+              </div>
+              <div className="report-item-actions">
+                {item.previewPath && (
+                  <button className="secondary-command" onClick={() => runReportAction(() => openPath(item.previewPath as string))} type="button">
+                    Preview
+                  </button>
+                )}
+                {item.diffPath && (
+                  <button className="secondary-command" onClick={() => runReportAction(() => openPath(item.diffPath as string))} type="button">
+                    Diff
+                  </button>
+                )}
+                {item.baselinePath && (
+                  <button className="secondary-command" onClick={() => runReportAction(() => openPath(item.baselinePath as string))} type="button">
+                    Baseline
+                  </button>
+                )}
+                {item.latestPath && item.latestPath !== item.previewPath && (
+                  <button className="secondary-command" onClick={() => runReportAction(() => openPath(item.latestPath as string))} type="button">
+                    Latest
+                  </button>
+                )}
+              </div>
+            </article>
+            );
+          })
+        ) : (
+          <p>No changed, added, removed, or tolerated previews.</p>
+        )}
+      </section>
+      <section className="report-links">
+        <span>Files</span>
+        <div className="report-actions">
+          <button className="secondary-command" onClick={() => runReportAction(() => openPath(report.htmlReportPath))} type="button">
+            <FileCode2 size={15} />
+            HTML
+          </button>
+          <button className="secondary-command" onClick={() => runReportAction(() => openPath(report.markdownReportPath))} type="button">
+            <FileCode2 size={15} />
+            Markdown
+          </button>
+          <button className="secondary-command" onClick={() => runReportAction(() => openPath(report.reportPath))} type="button">
+            <FileCode2 size={15} />
+            JSON
+          </button>
+          <button className="secondary-command" onClick={() => runReportAction(() => revealItemInDir(report.htmlReportPath))} type="button">
+            <FolderOpen size={15} />
+            Folder
+          </button>
+        </div>
+        {actionError && <p className="catalog-error">{actionError}</p>}
+        <code>{report.htmlReportPath}</code>
+        <code>{report.markdownReportPath}</code>
+        <code>{report.reportPath}</code>
+      </section>
+    </div>
+  );
+}
+
+type ReviewDecision = "accepted" | "dismissed";
+
+function reportReviewStorageKey(report: ScreenshotReportSummary) {
+  return `theme-preview-report-review:${report.reportPath}`;
+}
+
+function reviewItemKey(item: ScreenshotReviewItem) {
+  return `${item.status}:${item.relativePath}`;
+}
+
+function reviewDecisionExportPayload(report: ScreenshotReportSummary, decisions: Record<string, ReviewDecision>) {
+  const entries = Object.entries(decisions)
+    .map(([key, decision]) => ({ key, decision }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+
+  return {
+    reportPath: report.reportPath,
+    baselineSnapshotId: report.baselineSnapshotId,
+    latestSnapshotId: report.latestSnapshotId,
+    exportedAt: new Date().toISOString(),
+    accepted: entries.filter((entry) => entry.decision === "accepted").length,
+    dismissed: entries.filter((entry) => entry.decision === "dismissed").length,
+    decisions: entries,
+  };
+}
+
+function downloadJson(filename: string, value: unknown) {
+  const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function runtimeTitle(status: EnvironmentStatus) {
   const duckdb = status.duckdbVersion ?? "DuckDB unavailable";
   const ollama = status.ollamaVersion ?? "Ollama unavailable";
 
   return `${status.message}\n${duckdb}\n${ollama}\nModel: ${status.embeddingModel}`;
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(3)}%`;
 }
 
 function PropControl({

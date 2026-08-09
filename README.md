@@ -19,6 +19,7 @@ The app is not trying to be a drag-and-drop page editor. It is a deterministic p
 - Searches the local catalog for components, groups, and themes.
 - Smoke-tests the browser preview for blank renders, horizontal clipping, unmanaged text overflow, and tiny controls.
 - Exports browser-rendered component and group preview screenshots for every theme.
+- Shows the latest screenshot comparison summary inside the desktop inspector, with actions to open generated report files, inspect individual changed previews, mark items accepted or dismissed locally, export those decisions beside the report, and load exported decisions in later sessions.
 
 The TOML files are the source of truth. DuckDB is a derived local catalog/cache for search and future embedding workflows.
 
@@ -56,9 +57,28 @@ To compare the latest export against its matching metadata snapshot, or against 
 ```powershell
 npm run compare:screenshots
 npm run compare:screenshots -- 69b0c577a9be
+npm run compare:screenshots:strict
 ```
 
-Comparison reports are written to `artifacts/previews/reports`. When a preview image changes, a pink-highlighted `.diff.png` is written beside the report under `artifacts/previews/reports/<baseline>-to-<latest>`.
+Comparison reports are written to `artifacts/previews/reports` as JSON, HTML, and Markdown. The HTML report shows an all-clear, tolerated-drift, or needs-review status, links back to the raw JSON, and includes browser-local review notes on each review card. The Markdown report gives the same review summary in a pull-request-friendly format. Non-empty notes can be exported from the HTML report as a small JSON file. When a preview image changes, a pink-highlighted `.diff.png` is written beside the report under `artifacts/previews/reports/<baseline>-to-<latest>`.
+
+Use `npm run compare:screenshots:strict` for CI or release checks. It writes the same reports, then exits with a failing status when added, removed, or changed previews need review. Tolerated differences still pass when they are within the configured threshold.
+
+By default, any pixel difference is reported as changed. To tolerate tiny render drift, set `PIXEL_DIFF_THRESHOLD` to a changed-pixel ratio:
+
+```powershell
+$env:PIXEL_DIFF_THRESHOLD = "0.001"
+npm run compare:screenshots
+```
+
+Differences at or below the threshold are still recorded, but are listed as tolerated rather than changed.
+
+To ignore small per-pixel color shifts before counting changed pixels, set `PIXEL_COLOR_THRESHOLD` to an RGBA distance:
+
+```powershell
+$env:PIXEL_COLOR_THRESHOLD = "3"
+npm run compare:screenshots
+```
 
 The built executable is written to:
 

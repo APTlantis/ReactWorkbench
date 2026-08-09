@@ -23,7 +23,8 @@ This project started as a first-day prototype, so the roadmap should stay practi
 - deterministic preview checks for visible copy, theme contrast, empty groups, and unresolved group references
 - browser smoke checks for blank renders, horizontal clipping, unmanaged text overflow, and tiny controls
 - screenshot export for every browser-rendered component and group preview across every theme, with metadata-hash snapshots
-- screenshot comparison reports for added, removed, changed, and unchanged preview images, with pixel-diff artifacts for changed images
+- screenshot comparison reports in JSON, HTML, and Markdown with review status, raw JSON links, browser-local review notes, exported note JSON, optional strict-check failures, and pixel-diff artifacts for changed images
+- in-app summary of the latest screenshot comparison report with quick actions for generated report files, individual changed previews, local accept/dismiss review state, and exported review decisions
 - DuckDB-backed catalog indexing
 - catalog search
 
@@ -43,7 +44,7 @@ Toolbar, form row, dialog footer, and table header layouts are now included. Fut
 
 4. Extend screenshot exports
 
-Component and group previews can now be exported as images across every theme, each export is identified by a deterministic TOML metadata hash, and screenshot reports can compare latest output against a baseline snapshot with diff images for changed previews. Next useful improvements are perceptual thresholds and surfacing changed previews inside the app.
+Component and group previews can now be exported as images across every theme, each export is identified by a deterministic TOML metadata hash, and screenshot reports can compare latest output against a baseline snapshot with HTML review pages, Markdown summaries, explicit review status, optional strict-check failures, local review notes with JSON export, diff images, configurable pixel-ratio thresholds, per-pixel color tolerance, and an in-app summary with quick actions for generated report files, individual changed previews, local accept/dismiss review state, and exported review decisions. Next useful improvement is loading prior exported decisions back into the in-app review panel.
 
 5. Extend deterministic visual checks
 

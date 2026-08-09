@@ -5,6 +5,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::Command,
+    time::SystemTime,
 };
 use tauri::{AppHandle, Manager};
 
@@ -196,6 +197,141 @@ struct EnvironmentStatus {
     index_initialized: bool,
     indexed_record_count: usize,
     message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReportFile {
+    compared_at: String,
+    baseline: ScreenshotReportEndpoint,
+    latest: ScreenshotReportEndpoint,
+    thresholds: ScreenshotReportThresholds,
+    summary: ScreenshotReportCounts,
+    #[serde(default)]
+    added: Vec<ScreenshotImageRecord>,
+    #[serde(default)]
+    removed: Vec<ScreenshotImageRecord>,
+    #[serde(default)]
+    tolerated: Vec<ScreenshotChangedRecord>,
+    #[serde(default)]
+    changed: Vec<ScreenshotChangedRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReportEndpoint {
+    snapshot_id: String,
+    dir: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReportThresholds {
+    pixel_color_distance: f64,
+    pixel_diff_ratio: f64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReportCounts {
+    added: usize,
+    removed: usize,
+    changed: usize,
+    tolerated: usize,
+    unchanged: usize,
+    total_compared: usize,
+    changed_pixels: usize,
+    tolerated_pixels: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotImageRecord {
+    kind: String,
+    name: String,
+    path: String,
+    relative_path: String,
+    theme: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotChangedRecord {
+    baseline: ScreenshotImageRecord,
+    latest: ScreenshotImageRecord,
+    diff: ScreenshotDiffRecord,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotDiffRecord {
+    path: String,
+    changed_pixels: usize,
+    changed_ratio: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReviewItem {
+    status: String,
+    theme: String,
+    kind: String,
+    name: String,
+    relative_path: String,
+    preview_path: Option<String>,
+    baseline_path: Option<String>,
+    latest_path: Option<String>,
+    diff_path: Option<String>,
+    changed_pixels: Option<usize>,
+    changed_ratio: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReportSummary {
+    report_path: String,
+    html_report_path: String,
+    markdown_report_path: String,
+    compared_at: String,
+    baseline_snapshot_id: String,
+    latest_snapshot_id: String,
+    baseline_dir: String,
+    latest_dir: String,
+    status: String,
+    status_title: String,
+    status_detail: String,
+    thresholds: ScreenshotReportThresholds,
+    summary: ScreenshotReportCounts,
+    review_items: Vec<ScreenshotReviewItem>,
+    review_decisions: Vec<ScreenshotReviewDecision>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReviewDecision {
+    key: String,
+    decision: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReviewExport {
+    report_path: String,
+    baseline_snapshot_id: String,
+    latest_snapshot_id: String,
+    exported_at: String,
+    accepted: usize,
+    dismissed: usize,
+    decisions: Vec<ScreenshotReviewDecision>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotReviewExportResult {
+    path: String,
+    accepted: usize,
+    dismissed: usize,
+    decision_count: usize,
 }
 
 struct IndexRecord {
@@ -496,6 +632,262 @@ fn search_index(
         .map_err(|error| format!("Could not parse DuckDB catalog results: {error}"))
 }
 
+#[tauri::command]
+fn latest_screenshot_report(app: AppHandle) -> Result<Option<ScreenshotReportSummary>, String> {
+    let reports_dir = artifacts_dir(&app).join("previews").join("reports");
+    if !reports_dir.is_dir() {
+        return Ok(None);
+    }
+
+    let mut reports = fs::read_dir(&reports_dir)
+        .map_err(|error| format!("Could not read screenshot reports {}: {error}", reports_dir.display()))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+        .filter(|path| !is_review_decision_export(path))
+        .filter_map(|path| {
+            let modified = fs::metadata(&path)
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+            Some((modified, path))
+        })
+        .collect::<Vec<_>>();
+    reports.sort_by_key(|(modified, _)| *modified);
+
+    let Some((_, report_path)) = reports.pop() else {
+        return Ok(None);
+    };
+
+    let content = fs::read_to_string(&report_path)
+        .map_err(|error| format!("Could not read screenshot report {}: {error}", report_path.display()))?;
+    let report = serde_json::from_str::<ScreenshotReportFile>(&content)
+        .map_err(|error| format!("Could not parse screenshot report {}: {error}", report_path.display()))?;
+    let (status, status_title, status_detail) = screenshot_report_status(&report.summary);
+    let html_report_path = report_path.with_extension("html");
+    let markdown_report_path = report_path.with_extension("md");
+
+    let review_items = screenshot_review_items(&report);
+    let review_decisions = read_screenshot_review_decisions(&report_path)?;
+
+    Ok(Some(ScreenshotReportSummary {
+        report_path: report_path.display().to_string(),
+        html_report_path: html_report_path.display().to_string(),
+        markdown_report_path: markdown_report_path.display().to_string(),
+        compared_at: report.compared_at,
+        baseline_snapshot_id: report.baseline.snapshot_id,
+        latest_snapshot_id: report.latest.snapshot_id,
+        baseline_dir: report.baseline.dir,
+        latest_dir: report.latest.dir,
+        status,
+        status_title,
+        status_detail,
+        thresholds: ScreenshotReportThresholds {
+            pixel_color_distance: report.thresholds.pixel_color_distance,
+            pixel_diff_ratio: report.thresholds.pixel_diff_ratio,
+        },
+        summary: report.summary,
+        review_items,
+        review_decisions,
+    }))
+}
+
+#[tauri::command]
+fn export_screenshot_review_decisions(
+    app: AppHandle,
+    export: ScreenshotReviewExport,
+) -> Result<ScreenshotReviewExportResult, String> {
+    let reports_dir = artifacts_dir(&app).join("previews").join("reports");
+    let report_path = PathBuf::from(&export.report_path);
+    let canonical_reports_dir = reports_dir
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve screenshot reports directory {}: {error}", reports_dir.display()))?;
+    let canonical_report_path = report_path
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve screenshot report {}: {error}", report_path.display()))?;
+
+    if !canonical_report_path.starts_with(&canonical_reports_dir) {
+        return Err("Review decisions can only be exported beside screenshot reports.".to_string());
+    }
+
+    if canonical_report_path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        return Err("Review decisions must be exported for a JSON screenshot report.".to_string());
+    }
+
+    let output_path = review_decision_export_path(&canonical_report_path)?;
+
+    let accepted = export
+        .decisions
+        .iter()
+        .filter(|item| item.decision == "accepted")
+        .count();
+    let dismissed = export
+        .decisions
+        .iter()
+        .filter(|item| item.decision == "dismissed")
+        .count();
+    let json = serde_json::to_string_pretty(&export)
+        .map_err(|error| format!("Could not serialize review decisions: {error}"))?;
+    fs::write(&output_path, format!("{json}\n"))
+        .map_err(|error| format!("Could not export review decisions {}: {error}", output_path.display()))?;
+
+    Ok(ScreenshotReviewExportResult {
+        path: output_path.display().to_string(),
+        accepted,
+        dismissed,
+        decision_count: export.decisions.len(),
+    })
+}
+
+fn read_screenshot_review_decisions(report_path: &Path) -> Result<Vec<ScreenshotReviewDecision>, String> {
+    let path = review_decision_export_path(report_path)?;
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|error| format!("Could not read review decisions {}: {error}", path.display()))?;
+    let export = serde_json::from_str::<ScreenshotReviewExport>(&content)
+        .map_err(|error| format!("Could not parse review decisions {}: {error}", path.display()))?;
+
+    Ok(export
+        .decisions
+        .into_iter()
+        .filter(|item| item.decision == "accepted" || item.decision == "dismissed")
+        .collect())
+}
+
+fn review_decision_export_path(report_path: &Path) -> Result<PathBuf, String> {
+    let mut output_path = report_path.to_path_buf();
+    let stem = output_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Screenshot report has no usable file name.".to_string())?;
+    output_path.set_file_name(format!("{stem}.review.json"));
+    Ok(output_path)
+}
+
+fn is_review_decision_export(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".review.json"))
+}
+
+fn screenshot_review_items(report: &ScreenshotReportFile) -> Vec<ScreenshotReviewItem> {
+    let mut items = Vec::new();
+
+    items.extend(report.changed.iter().map(|item| ScreenshotReviewItem {
+        status: "changed".to_string(),
+        theme: item.latest.theme.clone(),
+        kind: item.latest.kind.clone(),
+        name: item.latest.name.clone(),
+        relative_path: item.latest.relative_path.clone(),
+        preview_path: Some(item.latest.path.clone()),
+        baseline_path: Some(item.baseline.path.clone()),
+        latest_path: Some(item.latest.path.clone()),
+        diff_path: Some(item.diff.path.clone()),
+        changed_pixels: Some(item.diff.changed_pixels),
+        changed_ratio: Some(item.diff.changed_ratio),
+    }));
+
+    items.extend(report.tolerated.iter().map(|item| ScreenshotReviewItem {
+        status: "tolerated".to_string(),
+        theme: item.latest.theme.clone(),
+        kind: item.latest.kind.clone(),
+        name: item.latest.name.clone(),
+        relative_path: item.latest.relative_path.clone(),
+        preview_path: Some(item.latest.path.clone()),
+        baseline_path: Some(item.baseline.path.clone()),
+        latest_path: Some(item.latest.path.clone()),
+        diff_path: Some(item.diff.path.clone()),
+        changed_pixels: Some(item.diff.changed_pixels),
+        changed_ratio: Some(item.diff.changed_ratio),
+    }));
+
+    items.extend(report.added.iter().map(|item| ScreenshotReviewItem {
+        status: "added".to_string(),
+        theme: item.theme.clone(),
+        kind: item.kind.clone(),
+        name: item.name.clone(),
+        relative_path: item.relative_path.clone(),
+        preview_path: Some(item.path.clone()),
+        baseline_path: None,
+        latest_path: Some(item.path.clone()),
+        diff_path: None,
+        changed_pixels: None,
+        changed_ratio: None,
+    }));
+
+    items.extend(report.removed.iter().map(|item| ScreenshotReviewItem {
+        status: "removed".to_string(),
+        theme: item.theme.clone(),
+        kind: item.kind.clone(),
+        name: item.name.clone(),
+        relative_path: item.relative_path.clone(),
+        preview_path: Some(item.path.clone()),
+        baseline_path: Some(item.path.clone()),
+        latest_path: None,
+        diff_path: None,
+        changed_pixels: None,
+        changed_ratio: None,
+    }));
+
+    items.sort_by(|left, right| {
+        review_item_rank(&left.status)
+            .cmp(&review_item_rank(&right.status))
+            .then(left.theme.cmp(&right.theme))
+            .then(left.kind.cmp(&right.kind))
+            .then(left.name.cmp(&right.name))
+    });
+
+    items
+}
+
+fn review_item_rank(status: &str) -> u8 {
+    match status {
+        "changed" => 0,
+        "added" => 1,
+        "removed" => 2,
+        "tolerated" => 3,
+        _ => 4,
+    }
+}
+
+fn screenshot_report_status(summary: &ScreenshotReportCounts) -> (String, String, String) {
+    let blocking = summary.added + summary.removed + summary.changed;
+    if blocking > 0 {
+        return (
+            "review".to_string(),
+            "Needs review".to_string(),
+            format!(
+                "{blocking} preview {} review before accepting this snapshot.",
+                if blocking == 1 { "item needs" } else { "items need" }
+            ),
+        );
+    }
+
+    if summary.tolerated > 0 {
+        return (
+            "tolerated".to_string(),
+            "Review tolerated drift".to_string(),
+            format!(
+                "{} preview {} within the configured threshold.",
+                summary.tolerated,
+                if summary.tolerated == 1 {
+                    "difference is"
+                } else {
+                    "differences are"
+                }
+            ),
+        );
+    }
+
+    (
+        "ready".to_string(),
+        "All clear".to_string(),
+        "No preview additions, removals, or image differences were found.".to_string(),
+    )
+}
+
 fn validate_group_file(app: &AppHandle, group: &GroupFile) -> Result<GroupValidation, String> {
     let components = read_all_components(app)?;
     Ok(validate_group_against_components(group, &components))
@@ -753,6 +1145,25 @@ fn writable_metadata_dir(app: &AppHandle) -> PathBuf {
     metadata_dir(app)
 }
 
+fn artifacts_dir(app: &AppHandle) -> PathBuf {
+    if let Ok(current_dir) = std::env::current_dir() {
+        let candidate = current_dir.join("artifacts");
+        if candidate.is_dir() {
+            return candidate;
+        }
+
+        let candidate = current_dir.join("..").join("artifacts");
+        if candidate.is_dir() {
+            return candidate;
+        }
+    }
+
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join("artifacts"))
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("artifacts"))
+}
+
 fn slugify(value: &str) -> String {
     let mut output = String::new();
     let mut last_was_dash = false;
@@ -809,7 +1220,9 @@ pub fn run() {
             load_theme,
             save_preview_selection,
             initialize_local_index,
-            search_index
+            search_index,
+            latest_screenshot_report,
+            export_screenshot_review_decisions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -868,6 +1281,12 @@ mod tests {
     fn group_names_slugify_to_file_ids() {
         assert_eq!(slugify("Settings Row!"), "settings-row");
         assert_eq!(slugify("  Danger   Zone  "), "danger-zone");
+    }
+
+    #[test]
+    fn review_decision_exports_are_not_screenshot_reports() {
+        assert!(is_review_decision_export(Path::new("baseline-to-latest.review.json")));
+        assert!(!is_review_decision_export(Path::new("baseline-to-latest.json")));
     }
 
     #[test]

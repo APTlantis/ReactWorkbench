@@ -10,6 +10,7 @@
     "smoke": "node scripts/smoke-preview.mjs",
     "screenshots": "node scripts/export-previews.mjs",
     "compare:screenshots": "node scripts/compare-previews.mjs",
+    "compare:screenshots:strict": "node scripts/compare-previews.mjs --strict",
     "tauri": "tauri"
   },
   "dependencies": {
