@@ -1,0 +1,251 @@
+[manifest]
+schema = "APTlantis Entity Manifest"
+schema_version = "2.4"
+manifest_type = "project"
+canonical_name = "Theme-Preview.manifest.toml"
+last_updated = "2026-08-11"
+maintainer = "Herb"
+
+[entity]
+id = "theme-preview"
+title = "Theme Preview"
+kind = "project"
+class = "project"
+status = "release-prep"
+description = "Local-first Tauri desktop laboratory for deterministic UI component, theme-token, and reusable component-group previews from TOML metadata."
+tags = [
+    "desktop-app",
+    "tauri",
+    "react",
+    "typescript",
+    "theme-preview",
+    "component-metadata",
+    "local-first",
+]
+
+[project]
+type = "desktop-application"
+portfolio_class = "project"
+stage = "release-prep"
+version = "0.1.0"
+
+[governance]
+primary_standard = "DRS"
+primary_standard_path = "D:\\.library\\aptlantis_core\\DRS\\README.md"
+additional_standards = [
+    "WGS",
+    "PPS",
+]
+additional_standard_paths = [
+    "D:\\.library\\aptlantis_core\\WGS\\README.md",
+    "D:\\.library\\aptlantis_core\\PPS\\README.md",
+]
+inherits_from = "..\\DRS.manifest.toml"
+proposal_required = true
+
+[lifecycle]
+state = "release-prep"
+created = "2026-08-07"
+last_reviewed = "2026-08-11"
+maintainer = "Herb"
+completion_percent = 70
+
+[paths]
+root = "D:\\DRS\\Theme-Preview"
+source_before_promotion = "D:\\.zoning\\Theme-Preview"
+docs = "docs"
+source = "src"
+tauri_source = "src-tauri"
+metadata = "metadata"
+artifacts = "artifacts"
+
+[documentation]
+project_readme = "Project-README.md"
+readme = "README.md"
+brief = "Theme-Preview.md"
+proposal = "docs\\Project-Proposal.md"
+roadmap = "docs\\ROADMAP.md"
+metadata_guide = "docs\\METADATA.md"
+release_checklist = "docs\\Theme-Preview - Release Checklist.md"
+dependency_provenance = "docs\\Theme-Preview - Dependency Provenance.md"
+current_release_note = "docs\\releases\\Theme-Preview-v0.1.0-draft.md"
+
+[runtime]
+platform = "desktop"
+environment = "Windows desktop via Tauri 2, Vite, React, TypeScript, and Rust"
+language_primary = "TypeScript"
+languages_used = [
+    "TypeScript",
+    "Rust",
+    "JavaScript",
+    "TOML",
+    "CSS",
+]
+services = []
+storage = [
+    "local-filesystem",
+]
+
+[capabilities]
+offline = true
+encryption = false
+telemetry = false
+network_required = false
+metadata_driven = true
+screenshot_export = true
+visual_comparison = true
+
+[relationships]
+parent = "D:\\DRS"
+child_projects = []
+depends_on_projects = []
+used_by_projects = []
+related_projects = [
+    "D:\\.library\\aptlantis_core\\SESM",
+    "D:\\.library\\aptlantis_core\\blue.slate",
+]
+external_dependencies = [
+    "Tauri 2",
+    "React 19",
+    "Vite 7",
+    "TypeScript 5.8",
+    "Playwright 1.62",
+    "DuckDB optional local catalog runtime when available",
+]
+
+[state]
+stability = "experimental"
+active_development = true
+known_gaps = [
+    "Install, launch, uninstall, and docs-in-package behavior have not been DRS verified after promotion to DRS.",
+    "Existing MSI, NSIS, executable, dist, screenshot, and smoke outputs are preserved as artifacts but are not certified release artifacts.",
+    "Installer and executable SHA-256 values are not recorded as release evidence yet.",
+    "Signing is not configured; current signing posture is unsigned until proven otherwise.",
+    "Git status requires non-global safe.directory handling because of local ownership metadata.",
+    "D:\\Development.manifest.toml is referenced by root instructions but was absent during onboarding; this project does not create it.",
+]
+technical_debt = "moderate"
+
+[structure]
+required_files = [
+    "AGENTS.md",
+    "Theme-Preview.manifest.toml",
+    "Project-README.md",
+    "README.md",
+    "docs\\Project-Proposal.md",
+    "docs\\Theme-Preview - Release Checklist.md",
+]
+required_child_project_files = []
+source_of_truth = [
+    "metadata\\components",
+    "metadata\\groups",
+    "metadata\\themes",
+]
+derived_outputs = [
+    "dist",
+    "artifacts",
+    "src-tauri\\target",
+]
+
+[verification]
+level = "local-verification-passed"
+evidence = "npm ci completed with 0 vulnerabilities; npm run verify passed from D:\\DRS\\Theme-Preview on 2026-08-11 after cleaning stale generated Tauri target cache and installing Playwright Chromium."
+reviewed = "2026-08-11"
+build_verified = true
+tests_verified = true
+artifact_verified = false
+release_verified = false
+
+[release]
+status = "draft"
+version = "0.1.0"
+name = "Theme Preview v0.1.0 - Draft Metadata Preview Studio"
+date = "2026-08-11"
+signing = "unsigned-pending-verification"
+
+[release.installer.msi]
+path = "src-tauri\\target\\release\\bundle\\msi\\Theme Preview_0.1.0_x64_en-US.msi"
+runtime = "win-x64"
+package_version = "0.1.0.0"
+size_bytes = 3309568
+sha256 = "PENDING-DRS-VERIFICATION"
+
+[release.installer.nsis]
+path = "src-tauri\\target\\release\\bundle\\nsis\\Theme Preview_0.1.0_x64-setup.exe"
+runtime = "win-x64"
+package_version = "0.1.0.0"
+size_bytes = 2225669
+sha256 = "PENDING-DRS-VERIFICATION"
+
+[release.verified]
+date = "2026-08-11"
+tests = "npm run verify passed: build, 40 Node tests, strict screenshot comparison, 8 Rust/Tauri tests, browser smoke, 0 visual smoke issues"
+installer_build = "existing build outputs observed; not certified as release artifacts"
+install_check = "pending"
+data_safety = "pending"
+upgrade_check = "not applicable until a prior release exists"
+
+[automation]
+build = "npm run build"
+verify = "npm run verify"
+package = "npm run tauri build"
+tasks = [
+    "npm run screenshots",
+    "npm run compare:screenshots",
+    "npm run compare:screenshots:strict",
+]
+
+[observability]
+logs = false
+metrics = false
+health_checks = false
+event_stream = false
+telemetry = false
+
+[semantic]
+domain = "desktop UI component-system preview tooling"
+primary_concepts = [
+    "component metadata",
+    "theme tokens",
+    "component groups",
+    "visual verification",
+    "screenshot comparison",
+]
+related_domains = [
+    "design systems",
+    "local-first desktop tools",
+    "release verification",
+]
+complexity = "moderate"
+
+[visual]
+theme = "metadata-defined light, dark, and aurora themes"
+primary_color = "theme-dependent"
+semantic_role = "component preview and visual review laboratory"
+contains_svg_assets = true
+contains_scene_art = false
+
+[links]
+repository = ""
+homepage = ""
+dashboard = ""
+
+[agent]
+read_first = [
+    "AGENTS.md",
+    "Theme-Preview.manifest.toml",
+    "Project-README.md",
+    "README.md",
+    "Theme-Preview.md",
+    "docs\\Project-Proposal.md",
+]
+authoritative_docs = [
+    "Theme-Preview.manifest.toml",
+    "Project-README.md",
+    "AGENTS.md",
+    "docs\\Project-Proposal.md",
+    "docs\\Theme-Preview - Release Checklist.md",
+]
+safe_to_modify = true
+notes = "Preserve TOML metadata as source of truth. Do not claim DRS release readiness until artifact hashes, install, launch, uninstall, and docs inclusion are verified."
+

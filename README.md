@@ -1,119 +1,193 @@
 # Theme Preview
 
-Theme Preview is a Tauri 2 desktop component laboratory for exploring UI components, themes, and component groups from explicit metadata.
+Theme Preview is a Tauri 2 desktop laboratory for inspecting UI components, theme tokens, and reusable component groups from explicit TOML metadata.
 
-The app is not trying to be a drag-and-drop page editor. It is a deterministic preview environment: define components, states, themes, and named groups, then inspect how those pieces behave alone and together.
+It is intentionally deterministic. The app is not a page builder, Figma replacement, or generative design tool. It is a place to define components, states, themes, and named UI areas, then inspect how those definitions behave alone, together, and across themes.
 
-## What It Does Now
+## What It Does
 
-- Loads component definitions from `metadata/components`.
+- Loads component metadata from `metadata/components`.
 - Loads theme token sets from `metadata/themes`.
-- Loads named component areas and layout patterns from `metadata/groups`.
-- Previews one component and its named states, including buttons, cards, badges, inputs, and toggles.
-- Switches themes and compares themes.
-- Shows a board of all defined groups.
-- Surfaces duplicate saved group structures in the group board, matching board cards, and group inspector, with a persisted board filter for duplicate structures.
-- Lets you compose and save new groups from inside the app.
-- Validates groups against known components and states.
-- Shows explicit review state when group drafts have validation warnings.
-- Runs deterministic preview checks for visible copy, theme contrast, empty groups, and unresolved group references.
-- Builds a local DuckDB catalog when DuckDB is available.
-- Searches the local catalog for components, groups, and themes.
-- Smoke-tests the browser preview for blank renders, horizontal, vertical, and child-content clipping, unmanaged text overflow, tiny controls, computed text contrast, and screenshot report review-source messages.
-- Exports browser-rendered component and group preview screenshots for every theme.
-- Shows recent screenshot comparison summaries inside the desktop inspector, with actions to open generated report files, revisit recent comparisons, scan per-theme and per-kind report totals, jump from totals into focused filter slices, filter review items by status, theme, and preview kind, see filtered item counts, reopen each report with its last filter focus, reset filters quickly, inspect individual changed previews, show an empty review summary when no items need review, mark items accepted or dismissed locally, clear stale local decisions, show a final reviewed status, export those decisions beside the report, distinguish local browser decisions from exported decisions, and distinguish current or stale exported decisions loaded in later sessions.
+- Loads named component groups from `metadata/groups`.
+- Previews component states for buttons, cards, badges, inputs, and toggles.
+- Switches themes and compares theme token values.
+- Shows a board of saved groups and an inspector for the selected group.
+- Lets you compose, edit, validate, and save groups inside the app.
+- Supports group layouts such as `row`, `grid`, `stack`, `toolbar`, `form-row`, `dialog-footer`, and `table-header`.
+- Surfaces duplicate saved group structures in board cards, the group inspector, and duplicate-only board filtering.
+- Keeps duplicate fixtures covered with real metadata, including `settings-row.toml` and `settings-review-row.toml`.
+- Runs deterministic checks for visible copy, contrast, empty groups, unresolved references, clipping, tiny controls, and screenshot report review-source behavior.
+- Exports browser-rendered preview screenshots for every component and group across every theme.
+- Compares screenshot exports against metadata-hash snapshots and writes JSON, HTML, and Markdown reports.
+- Tracks local review decisions for changed screenshots and supports strict comparison checks for release-style verification.
+- Builds a local DuckDB catalog when DuckDB is available, with search over components, groups, and themes.
 
-The TOML files are the source of truth. DuckDB is a derived local catalog/cache for search and future embedding workflows.
+The TOML files are the source of truth. DuckDB, screenshots, reports, and smoke artifacts are derived outputs.
 
-The seeded `metadata/groups/settings-row.toml` and `metadata/groups/settings-review-row.toml` files intentionally share the same `row` layout and ordered `badge:soft-info`, `card:compact-warning`, `button:secondary-disabled` item sequence. They are fixture data for duplicate-structure surfacing, duplicate-only board filtering, similar-group inspector copy, jump targets, and verification output.
+## Quick Start
 
-## Running
+Install dependencies:
 
 ```powershell
 npm install
+```
+
+Run the desktop app:
+
+```powershell
 npm run tauri dev
 ```
 
-To build the desktop executable and installers:
+Run the Vite web preview instead:
+
+```powershell
+npm run dev
+```
+
+Build the frontend:
+
+```powershell
+npm run build
+```
+
+Build the desktop executable and installers:
 
 ```powershell
 npm run tauri build
 ```
 
-To run the browser smoke check while a Vite preview is available at `http://127.0.0.1:1420/`:
+The built Windows executable is written under:
+
+```text
+src-tauri/target/release/theme-preview.exe
+```
+
+## Verification
+
+The main local verification command is:
+
+```powershell
+npm run verify
+```
+
+It runs the frontend build, screenshot comparison tests, duplicate group tests, report review tests, strict screenshot comparison, Rust/Tauri tests, a temporary Vite preview server, and the browser smoke check. The final output includes a checklist summary, duplicate smoke coverage, and visual smoke totals.
+
+Focused checks are also available:
+
+```powershell
+npm run test:compare
+npm run test:groups
+npm run test:reports
+npm run compare:screenshots:strict
+```
+
+To run the browser smoke check directly, start a preview server first, then run:
 
 ```powershell
 npm run smoke
 ```
 
-Smoke artifacts are written to `artifacts/smoke`.
+Smoke artifacts are written to:
 
-To export screenshots for every component and group preview, across every theme, from the same running browser preview:
+```text
+artifacts/smoke
+```
+
+## Screenshots And Reports
+
+Export screenshots for every component and group preview across every theme:
 
 ```powershell
 npm run screenshots
 ```
 
-Screenshot exports and their manifest are written to `artifacts/previews/latest`, organized by theme. Each run also records a TOML metadata fingerprint and copies the same export to `artifacts/previews/snapshots/<metadata-hash>`.
+Screenshot exports are written to `artifacts/previews/latest`, organized by theme. Each run records a deterministic TOML metadata fingerprint and copies the export to:
 
-To compare the latest export against its matching metadata snapshot, or against a specific baseline snapshot id:
+```text
+artifacts/previews/snapshots/<metadata-hash>
+```
+
+Compare the latest export against its matching metadata snapshot, or against a specific baseline snapshot id:
 
 ```powershell
 npm run compare:screenshots
 npm run compare:screenshots -- 69b0c577a9be
 npm run compare:screenshots:strict
-npm run test:compare
-npm run verify
 ```
 
-Comparison reports are written to `artifacts/previews/reports` as JSON, HTML, and Markdown. The HTML report shows an all-clear, tolerated-drift, or needs-review status, links back to the raw JSON, and includes browser-local review notes on each review card. The Markdown report gives the same review summary in a pull-request-friendly format. Non-empty notes can be exported from the HTML report as a small JSON file. When a preview image changes, a pink-highlighted `.diff.png` is written beside the report under `artifacts/previews/reports/<baseline>-to-<latest>`.
+Comparison reports are written to:
 
-Use `npm run compare:screenshots:strict` for CI or release checks. It writes the same reports, then exits with a failing status when added, removed, or changed previews need review. Tolerated differences still pass when they are within the configured threshold. If a sibling `<baseline>-to-<latest>.review.json` file exists, strict mode treats blocking items marked `accepted` as reviewed and still fails on dismissed or unresolved items. Generated JSON, HTML, and Markdown reports include review-decision coverage so stale or partial decisions are visible.
+```text
+artifacts/previews/reports
+```
 
-Use `npm run verify` to run the local verification pass: build, compare fixture tests, strict screenshot comparison, Rust/Tauri tests, a temporary Vite preview server, and the browser smoke check. It ends with a concise checklist summary, including visual smoke totals from the generated smoke artifact.
+Each comparison can produce:
 
-By default, any pixel difference is reported as changed. To tolerate tiny render drift, set `PIXEL_DIFF_THRESHOLD` to a changed-pixel ratio:
+- JSON for machine-readable results.
+- HTML for interactive review.
+- Markdown for pull request summaries.
+- `.diff.png` images for changed previews.
+- Optional `.review.json` decisions for accepted or dismissed visual changes.
+
+Strict comparison fails when added, removed, or changed previews still need review. Accepted blocking items pass when the matching review decision file is present; dismissed or unresolved items continue to fail.
+
+Tiny rendering drift can be tolerated with:
 
 ```powershell
 $env:PIXEL_DIFF_THRESHOLD = "0.001"
 npm run compare:screenshots
 ```
 
-Differences at or below the threshold are still recorded, but are listed as tolerated rather than changed.
-
-To ignore small per-pixel color shifts before counting changed pixels, set `PIXEL_COLOR_THRESHOLD` to an RGBA distance:
+Small per-pixel color shifts can be ignored before counting changed pixels:
 
 ```powershell
 $env:PIXEL_COLOR_THRESHOLD = "3"
 npm run compare:screenshots
 ```
 
-The built executable is written to:
+## Metadata Model
 
-```text
-src-tauri/target/release/theme-preview.exe
-```
-
-## Project Shape
+Project metadata lives under:
 
 ```text
 metadata/
   components/   Component props and named states
   groups/       Named UI areas made from component states
   themes/       Theme token sets
+```
+
+Components define identity, supported props, named states, supported themes, and framework targets. Themes define token values for color, spacing, radii, and typography. Groups reference component states by id and arrange them into named UI areas.
+
+Duplicate group detection is based on a structural signature: group layout plus the ordered `component:state` item sequence. Names, descriptions, roles, and theme lists do not affect duplicate matching. See [Duplicate Structures](docs/METADATA.md#duplicate-structures) for the authoring rule.
+
+The seeded `metadata/groups/settings-row.toml` and `metadata/groups/settings-review-row.toml` files intentionally share this signature:
+
+```text
+row|badge:soft-info|card:compact-warning|button:secondary-disabled
+```
+
+That pair exists as fixture data for duplicate badges, duplicate-only board filtering, similar-group inspector copy, jump targets, and verification output.
+
+## Project Shape
+
+```text
+docs/           Concept, metadata guide, and roadmap
+metadata/       Source TOML for components, groups, and themes
+scripts/        Screenshot, comparison, smoke, report, and verification scripts
 src/            React + TypeScript frontend
-src-tauri/      Rust/Tauri backend commands
-docs/           Project notes and design rationale
+src-tauri/      Rust/Tauri desktop shell and commands
+artifacts/      Generated smoke, screenshot, and comparison outputs
 ```
 
 ## Useful Docs
 
-- [Concept](docs/CONCEPT.md): why this app exists and what problem it is trying to solve.
+- [Theme Preview Brief](Theme-Preview.md): product direction and operating model.
+- [Concept](docs/CONCEPT.md): why this app exists.
 - [Metadata Guide](docs/METADATA.md): how components, themes, and groups are described.
-- [Roadmap](docs/ROADMAP.md): what this first-day version already has and where it can go next.
+- [Roadmap](docs/ROADMAP.md): what is working and what is next.
 
-## Current Philosophy
+## Design Philosophy
 
-The human decides what belongs together. The app removes the tedious work of repeatedly checking how those pieces look across states, themes, and combinations.
+The human decides what belongs together. The app removes the repetitive work of checking whether those pieces still look right across states, themes, layouts, and saved combinations.
 
-That matters because many people do not know every UI component, state, token, or layout pattern off the top of their head. Even when they do, they may not want to manually rebuild the same combinations just to see whether a button, card, badge, or group still works in a different context.
+That keeps the system inspectable. Later search or AI-assisted workflows can help navigate larger catalogs, but the underlying definitions should stay portable, local, and predictable.

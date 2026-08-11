@@ -93,6 +93,25 @@ state = "danger-loading"
 role = "Destructive Action"
 ```
 
+### Duplicate Structures
+
+Duplicate group detection uses a structural signature made from:
+
+- the group layout
+- each item component id
+- each item state id
+- the item order
+
+Names, descriptions, roles, and theme lists do not affect the signature. This means two groups are considered structurally similar when they use the same layout and the same ordered component-state sequence, even if they describe different product areas.
+
+For example, `settings-row.toml` and `settings-review-row.toml` intentionally share this signature:
+
+```text
+row|badge:soft-info|card:compact-warning|button:secondary-disabled
+```
+
+That seeded pair keeps duplicate badges, duplicate-only board filtering, similar-group inspector copy, jump targets, and verification output covered by real metadata.
+
 ## Validation
 
 Groups are checked before saving.

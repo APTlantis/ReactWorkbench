@@ -35,7 +35,7 @@ This project started as a first-day prototype, so the roadmap should stay practi
 
 1. Improve group authoring
 
-Item reordering is now included in the composer, duplicate saved group structures are surfaced in the board, matching board cards, selected-group inspector, board inspector count, board inspector filter-state summary, board inspector quick reset, and duplicate-list jump targets with fixture-backed copy helpers, seeded metadata fixtures, README fixture notes, browser smoke coverage, and seeded duplicate metadata counts in verification output, duplicate-only board filtering persists per browser session with reload smoke coverage, overlapping duplicate finding fixtures keep helper counts unique, mixed seeded/synthetic findings have deterministic sort coverage, seeded metadata test parsing fails loudly on missing fields, seeded duplicate item counts and ordering now have explicit drift coverage, and drafts with validation warnings now show explicit pending/accepted review state. Next useful improvement is documenting duplicate-structure signature rules in the metadata guide.
+Item reordering is now included in the composer, duplicate saved group structures are surfaced in the board, matching board cards, selected-group inspector, board inspector count, board inspector filter-state summary, board inspector quick reset, and duplicate-list jump targets with fixture-backed copy helpers, seeded metadata fixtures, README fixture notes linked to metadata guide signature rules, expanded top-level docs, browser smoke coverage, and seeded duplicate metadata counts in verification output, duplicate-only board filtering persists per browser session with reload smoke coverage, overlapping duplicate finding fixtures keep helper counts unique, mixed seeded/synthetic findings have deterministic sort coverage, seeded metadata test parsing fails loudly on missing fields, seeded duplicate item counts and ordering now have explicit drift coverage, and drafts with validation warnings now show explicit pending/accepted review state. Next useful improvement is adding a compact metadata example index to the metadata guide.
 
 2. Add more sample component types
 
@@ -53,7 +53,7 @@ Component and group previews can now be exported as images across every theme, e
 
 The first app checks now cover visible copy, theme contrast, empty groups, and unresolved group references. The browser smoke check also covers blank renders, horizontal, vertical, and child-content clipping, unmanaged text overflow, tiny controls, computed text contrast, seeded duplicate badges, selected-group similar panels, duplicate-list jump controls, board inspector filter reset, duplicate-filter reload persistence, and screenshot report review-source messages. Useful next checks should stay measurable:
 
-- document duplicate-structure signature rules in the metadata guide
+- add a compact metadata example index to the metadata guide
 
 6. Add embedding-assisted search later
 
