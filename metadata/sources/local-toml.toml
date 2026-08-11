@@ -1,0 +1,8 @@
+[source]
+id = "local-toml"
+name = "Local TOML Metadata"
+description = "Built-in Theme Preview component, group, and theme metadata."
+adapter = "local-toml"
+kind = "local-directory"
+location = "metadata"
+enabled = true

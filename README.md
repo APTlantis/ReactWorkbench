@@ -21,9 +21,11 @@ It is intentionally deterministic. The current app is a place to define componen
 - Compares screenshot exports against metadata-hash snapshots and writes JSON, HTML, and Markdown reports.
 - Tracks local review decisions for changed screenshots and supports strict comparison checks for release-style verification.
 - Builds a local DuckDB catalog when DuckDB is available, with search over components, groups, and themes.
-- Plans source adapters so local TOML, shadcn-compatible repositories, and later component libraries can sit beside each other in one catalog.
+- Reads source records from `metadata/sources`.
+- Indexes a local shadcn-style registry or component directory through the first shadcn adapter slice.
+- Shows source catalogs beside local components and groups.
 
-The TOML files are the current source of truth. Future imports should add explicit source records and adapter catalogs. DuckDB, screenshots, reports, and smoke artifacts are derived outputs.
+The TOML files are the current source of truth. Source records describe imported or external catalogs. DuckDB, adapter catalogs, screenshots, reports, and smoke artifacts are derived outputs.
 
 ## Quick Start
 
@@ -154,12 +156,15 @@ Project metadata lives under:
 metadata/
   components/   Component props and named states
   groups/       Named UI areas made from component states
+  sources/      Component catalog source records
   themes/       Theme token sets
 ```
 
 Components define identity, supported props, named states, supported themes, and framework targets. Themes define token values for color, spacing, radii, and typography. Groups reference component states by id and arrange them into named UI areas.
 
-The planned adapter model extends this without replacing it: local TOML is the first adapter, shadcn import is the next adapter target, and later libraries should normalize into the same catalog shape before they can participate in previews or page building.
+The adapter model extends this without replacing it: local TOML is the first adapter, shadcn import is the first external adapter target, and later libraries should normalize into the same catalog shape before they can participate in previews or page building.
+
+The current shadcn adapter slice can index a local shadcn-style registry with a root `registry.json`, or scan `components/ui/*.tsx` when no registry file is present. Imported entries are catalog items with provenance and preview status; they are not yet materialized as native editable components.
 
 Duplicate group detection is based on a structural signature: group layout plus the ordered `component:state` item sequence. Names, descriptions, roles, and theme lists do not affect duplicate matching. See [Duplicate Structures](docs/METADATA.md#duplicate-structures) for the authoring rule.
 
@@ -175,6 +180,7 @@ That pair exists as fixture data for duplicate badges, duplicate-only board filt
 
 ```text
 docs/           Concept, metadata guide, and roadmap
+examples/       Local adapter fixtures, including a shadcn-style registry
 metadata/       Source TOML for components, groups, and themes
 scripts/        Screenshot, comparison, smoke, report, and verification scripts
 src/            React + TypeScript frontend

@@ -1,0 +1,8 @@
+[source]
+id = "shadcn-fixture"
+name = "shadcn Fixture Registry"
+description = "Local shadcn-style registry fixture used to exercise adapter indexing without network access."
+adapter = "shadcn"
+kind = "local-directory"
+location = "examples/shadcn-registry"
+enabled = true

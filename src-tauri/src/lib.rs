@@ -135,6 +135,24 @@ struct ThemeTypography {
     scale: f32,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SourceFile {
+    source: SourceInfo,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SourceInfo {
+    id: String,
+    name: String,
+    description: String,
+    adapter: String,
+    kind: String,
+    location: String,
+    enabled: bool,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ComponentSummary {
@@ -160,6 +178,41 @@ struct GroupSummary {
     description: String,
     layout: String,
     item_count: usize,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SourceSummary {
+    id: String,
+    name: String,
+    description: String,
+    adapter: String,
+    kind: String,
+    location: String,
+    enabled: bool,
+    item_count: usize,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceCatalog {
+    source: SourceSummary,
+    items: Vec<SourceCatalogItem>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SourceCatalogItem {
+    id: String,
+    name: String,
+    item_type: String,
+    description: String,
+    files: Vec<String>,
+    dependencies: Vec<String>,
+    source_path: String,
+    preview_status: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -341,6 +394,37 @@ struct IndexRecord {
     body: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShadcnRegistry {
+    #[serde(default)]
+    items: Vec<ShadcnRegistryItem>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShadcnRegistryItem {
+    name: String,
+    #[serde(default, rename = "type")]
+    item_type: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    files: Vec<ShadcnRegistryFile>,
+    #[serde(default)]
+    dependencies: Vec<String>,
+    #[serde(default)]
+    registry_dependencies: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShadcnRegistryFile {
+    path: String,
+}
+
 const SUPPORTED_GROUP_LAYOUTS: &[&str] = &[
     "row",
     "grid",
@@ -403,6 +487,23 @@ fn load_group(app: AppHandle, group_id: String) -> Result<GroupFile, String> {
         .join("groups")
         .join(format!("{group_id}.toml"));
     read_toml(&path)
+}
+
+#[tauri::command]
+fn list_sources(app: AppHandle) -> Result<Vec<SourceSummary>, String> {
+    read_all_sources(&app)?
+        .into_iter()
+        .map(|source| summarize_source(&app, &source))
+        .collect()
+}
+
+#[tauri::command]
+fn load_source_catalog(app: AppHandle, source_id: String) -> Result<SourceCatalog, String> {
+    let source = read_all_sources(&app)?
+        .into_iter()
+        .find(|candidate| candidate.source.id == source_id)
+        .ok_or_else(|| format!("Source {source_id} was not found in metadata/sources."))?;
+    build_source_catalog(&app, &source)
 }
 
 #[tauri::command]
@@ -1060,6 +1161,220 @@ fn validate_group_against_components(
     }
 }
 
+fn summarize_source(app: &AppHandle, source: &SourceFile) -> Result<SourceSummary, String> {
+    let catalog = build_source_catalog(app, source)?;
+    Ok(SourceSummary {
+        id: source.source.id.clone(),
+        name: source.source.name.clone(),
+        description: source.source.description.clone(),
+        adapter: source.source.adapter.clone(),
+        kind: source.source.kind.clone(),
+        location: source.source.location.clone(),
+        enabled: source.source.enabled,
+        item_count: catalog.items.len(),
+        status: if catalog.warnings.is_empty() {
+            "ready".to_string()
+        } else {
+            "warning".to_string()
+        },
+    })
+}
+
+fn build_source_catalog(app: &AppHandle, source: &SourceFile) -> Result<SourceCatalog, String> {
+    let (items, warnings) = match source.source.adapter.as_str() {
+        "local-toml" => index_local_toml_source(app)?,
+        "shadcn" => index_shadcn_source(app, source)?,
+        adapter => (
+            Vec::new(),
+            vec![format!("Adapter {adapter} is not supported yet.")],
+        ),
+    };
+
+    Ok(SourceCatalog {
+        source: SourceSummary {
+            id: source.source.id.clone(),
+            name: source.source.name.clone(),
+            description: source.source.description.clone(),
+            adapter: source.source.adapter.clone(),
+            kind: source.source.kind.clone(),
+            location: source.source.location.clone(),
+            enabled: source.source.enabled,
+            item_count: items.len(),
+            status: if warnings.is_empty() {
+                "ready".to_string()
+            } else {
+                "warning".to_string()
+            },
+        },
+        items,
+        warnings,
+    })
+}
+
+fn index_local_toml_source(app: &AppHandle) -> Result<(Vec<SourceCatalogItem>, Vec<String>), String> {
+    let mut items = Vec::new();
+
+    items.extend(read_all_components(app)?.into_iter().map(|component| SourceCatalogItem {
+        id: format!("local-toml:component:{}", component.component.id),
+        name: component.component.name,
+        item_type: "component".to_string(),
+        description: component.component.description,
+        files: vec![format!("metadata/components/{}.toml", component.component.id)],
+        dependencies: Vec::new(),
+        source_path: "metadata/components".to_string(),
+        preview_status: "native".to_string(),
+    }));
+
+    items.extend(read_all_groups(app)?.into_iter().map(|group| SourceCatalogItem {
+        id: format!("local-toml:group:{}", group.group.id),
+        name: group.group.name,
+        item_type: "group".to_string(),
+        description: group.group.description,
+        files: vec![format!("metadata/groups/{}.toml", group.group.id)],
+        dependencies: Vec::new(),
+        source_path: "metadata/groups".to_string(),
+        preview_status: "native".to_string(),
+    }));
+
+    items.extend(read_all_themes(app)?.into_iter().map(|theme| SourceCatalogItem {
+        id: format!("local-toml:theme:{}", theme.theme.id),
+        name: theme.theme.name,
+        item_type: "theme".to_string(),
+        description: theme.theme.description,
+        files: vec![format!("metadata/themes/{}.toml", theme.theme.id)],
+        dependencies: Vec::new(),
+        source_path: "metadata/themes".to_string(),
+        preview_status: "native".to_string(),
+    }));
+
+    items.sort_by(|left, right| {
+        left.item_type
+            .cmp(&right.item_type)
+            .then(left.name.cmp(&right.name))
+    });
+    Ok((items, Vec::new()))
+}
+
+fn index_shadcn_source(
+    app: &AppHandle,
+    source: &SourceFile,
+) -> Result<(Vec<SourceCatalogItem>, Vec<String>), String> {
+    let source_root = resolve_source_location(app, &source.source.location);
+    index_shadcn_source_root(&source.source.id, &source_root)
+}
+
+fn index_shadcn_source_root(
+    source_id: &str,
+    source_root: &Path,
+) -> Result<(Vec<SourceCatalogItem>, Vec<String>), String> {
+    let mut warnings = Vec::new();
+
+    if !source_root.is_dir() {
+        return Ok((
+            Vec::new(),
+            vec![format!(
+                "Source directory {} does not exist.",
+                source_root.display()
+            )],
+        ));
+    }
+
+    let registry_path = source_root.join("registry.json");
+    if registry_path.is_file() {
+        let content = fs::read_to_string(&registry_path).map_err(|error| {
+            format!(
+                "Could not read shadcn registry {}: {error}",
+                registry_path.display()
+            )
+        })?;
+        let registry = serde_json::from_str::<ShadcnRegistry>(&content).map_err(|error| {
+            format!(
+                "Could not parse shadcn registry {}: {error}",
+                registry_path.display()
+            )
+        })?;
+        let mut items = registry
+            .items
+            .into_iter()
+            .map(|item| {
+                let files = item
+                    .files
+                    .iter()
+                    .map(|file| file.path.clone())
+                    .collect::<Vec<_>>();
+                let missing_files = files
+                    .iter()
+                    .filter(|file| !source_root.join(file).is_file())
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !missing_files.is_empty() {
+                    warnings.push(format!(
+                        "{} references missing files: {}.",
+                        item.name,
+                        missing_files.join(", ")
+                    ));
+                }
+
+                let mut dependencies = item.dependencies;
+                dependencies.extend(item.registry_dependencies);
+                dependencies.sort();
+                dependencies.dedup();
+
+                SourceCatalogItem {
+                    id: format!("{}:{}", source_id, item.name),
+                    name: item.title.unwrap_or_else(|| title_case(&item.name)),
+                    item_type: if item.item_type.is_empty() {
+                        "registry:ui".to_string()
+                    } else {
+                        item.item_type
+                    },
+                    description: item.description.unwrap_or_else(|| {
+                        "shadcn registry item imported into the source catalog.".to_string()
+                    }),
+                    files,
+                    dependencies,
+                    source_path: registry_path.display().to_string(),
+                    preview_status: "indexed".to_string(),
+                }
+            })
+            .collect::<Vec<_>>();
+        items.sort_by(|left, right| left.name.cmp(&right.name));
+        return Ok((items, warnings));
+    }
+
+    warnings.push("No registry.json found; scanned component files directly.".to_string());
+    let component_dir = source_root.join("components").join("ui");
+    let mut files = Vec::new();
+    collect_files_with_extension(&component_dir, "tsx", &mut files)?;
+    let mut items = files
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("component")
+                .to_string();
+            let relative = path
+                .strip_prefix(&source_root)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            SourceCatalogItem {
+                id: format!("{}:{}", source_id, name),
+                name: title_case(&name),
+                item_type: "registry:ui".to_string(),
+                description: "shadcn-style component file discovered from local directory.".to_string(),
+                files: vec![relative],
+                dependencies: Vec::new(),
+                source_path: component_dir.display().to_string(),
+                preview_status: "indexed".to_string(),
+            }
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok((items, warnings))
+}
+
 fn build_index_records(app: &AppHandle) -> Result<Vec<IndexRecord>, String> {
     let mut records = Vec::new();
 
@@ -1126,6 +1441,49 @@ fn build_index_records(app: &AppHandle) -> Result<Vec<IndexRecord>, String> {
         });
     }
 
+    for source in read_all_sources(app)? {
+        let catalog = build_source_catalog(app, &source)?;
+        records.push(IndexRecord {
+            id: format!("source:{}", source.source.id),
+            record_type: "source".to_string(),
+            title: source.source.name.clone(),
+            body: format!(
+                "{} Adapter: {}. Kind: {}. Location: {}. Items: {}. Status: {}.",
+                source.source.description,
+                source.source.adapter,
+                source.source.kind,
+                source.source.location,
+                catalog.items.len(),
+                catalog.source.status
+            ),
+        });
+
+        for item in catalog.items {
+            records.push(IndexRecord {
+                id: format!("shadcn-component:{}", item.id),
+                record_type: if source.source.adapter == "shadcn" {
+                    "shadcn-component".to_string()
+                } else {
+                    "source-item".to_string()
+                },
+                title: item.name,
+                body: format!(
+                    "{} Source: {}. Type: {}. Files: {}. Dependencies: {}. Preview: {}.",
+                    item.description,
+                    source.source.name,
+                    item.item_type,
+                    item.files.join(", "),
+                    if item.dependencies.is_empty() {
+                        "none".to_string()
+                    } else {
+                        item.dependencies.join(", ")
+                    },
+                    item.preview_status
+                ),
+            });
+        }
+    }
+
     Ok(records)
 }
 
@@ -1170,6 +1528,15 @@ fn read_all_themes(app: &AppHandle) -> Result<Vec<ThemeFile>, String> {
 
 fn read_all_groups(app: &AppHandle) -> Result<Vec<GroupFile>, String> {
     read_all_toml(&metadata_dir(app).join("groups"))
+}
+
+fn read_all_sources(app: &AppHandle) -> Result<Vec<SourceFile>, String> {
+    let dir = metadata_dir(app).join("sources");
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    read_all_toml(&dir)
 }
 
 fn read_all_toml<T>(dir: &Path) -> Result<Vec<T>, String>
@@ -1229,6 +1596,36 @@ fn metadata_dir(app: &AppHandle) -> PathBuf {
                 .join("..")
                 .join("metadata")
         })
+}
+
+fn project_root(app: &AppHandle) -> PathBuf {
+    if let Ok(current_dir) = std::env::current_dir() {
+        if current_dir.join("metadata").is_dir() {
+            return current_dir;
+        }
+
+        let parent = current_dir.join("..");
+        if parent.join("metadata").is_dir() {
+            return parent;
+        }
+    }
+
+    metadata_dir(app)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+        })
+}
+
+fn resolve_source_location(app: &AppHandle, location: &str) -> PathBuf {
+    let path = PathBuf::from(location);
+    if path.is_absolute() {
+        path
+    } else {
+        project_root(app).join(path)
+    }
 }
 
 fn writable_metadata_dir(app: &AppHandle) -> PathBuf {
@@ -1310,6 +1707,47 @@ fn command_version(program: &str, version_arg: &str) -> CommandStatus {
     }
 }
 
+fn collect_files_with_extension(
+    dir: &Path,
+    extension: &str,
+    output: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(dir)
+        .map_err(|error| format!("Could not read directory {}: {error}", dir.display()))?
+    {
+        let path = entry
+            .map_err(|error| format!("Could not read directory entry {}: {error}", dir.display()))?
+            .path();
+        if path.is_dir() {
+            collect_files_with_extension(&path, extension, output)?;
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some(extension) {
+            output.push(path);
+        }
+    }
+
+    output.sort();
+    Ok(())
+}
+
+fn title_case(value: &str) -> String {
+    value
+        .split(['-', '_', ' '])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1319,6 +1757,8 @@ pub fn run() {
             load_component,
             list_groups,
             load_group,
+            list_sources,
+            load_source_catalog,
             save_group,
             update_group,
             validate_group,
@@ -1395,6 +1835,40 @@ mod tests {
             .any(|group| group.group.id == "table-controls"));
         assert!(groups.iter().all(|group| !group.items.is_empty()));
         assert!(groups.iter().all(|group| !group.group.layout.is_empty()));
+    }
+
+    #[test]
+    fn seeded_source_metadata_parses() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("metadata")
+            .join("sources");
+        let sources: Vec<SourceFile> = read_all_toml(&dir).expect("sources should parse");
+
+        assert_eq!(sources.len(), 2);
+        assert!(sources
+            .iter()
+            .any(|source| source.source.adapter == "local-toml"));
+        assert!(sources
+            .iter()
+            .any(|source| source.source.adapter == "shadcn"));
+    }
+
+    #[test]
+    fn shadcn_registry_fixture_indexes_items() {
+        let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("examples")
+            .join("shadcn-registry");
+        let (items, warnings) =
+            index_shadcn_source_root("fixture", &source_root).expect("fixture should index");
+
+        assert_eq!(items.len(), 2);
+        assert!(warnings.is_empty());
+        assert!(items.iter().any(|item| item.name == "Button"));
+        assert!(items
+            .iter()
+            .any(|item| item.dependencies.contains(&"class-variance-authority".to_string())));
     }
 
     #[test]

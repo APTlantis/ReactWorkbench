@@ -174,9 +174,38 @@ type EnvironmentStatus = {
 
 type CatalogResult = {
   id: string;
-  recordType: "component" | "theme" | "group";
+  recordType: "component" | "theme" | "group" | "source" | "shadcn-component" | "source-item";
   title: string;
   body: string;
+};
+
+type SourceSummary = {
+  id: string;
+  name: string;
+  description: string;
+  adapter: string;
+  kind: string;
+  location: string;
+  enabled: boolean;
+  itemCount: number;
+  status: "ready" | "warning";
+};
+
+type SourceCatalog = {
+  source: SourceSummary;
+  items: SourceCatalogItem[];
+  warnings: string[];
+};
+
+type SourceCatalogItem = {
+  id: string;
+  name: string;
+  itemType: string;
+  description: string;
+  files: string[];
+  dependencies: string[];
+  sourcePath: string;
+  previewStatus: string;
 };
 
 type GroupValidation = {
@@ -309,6 +338,10 @@ async function browserInvoke<T>(command: string, args: InvokeArgs): Promise<T> {
       return listBrowserGroups() as T;
     case "load_group":
       return loadBrowserGroup(String(args.groupId)) as T;
+    case "list_sources":
+      return listBrowserSources() as T;
+    case "load_source_catalog":
+      return loadBrowserSourceCatalog(String(args.sourceId)) as T;
     case "save_group":
       return saveBrowserGroup(args.group as GroupFile) as T;
     case "update_group":
@@ -502,7 +535,11 @@ function loadBrowserTheme(themeId: string): ThemeFile {
 }
 
 function browserEnvironmentStatus(): EnvironmentStatus {
-  const recordCount = listBrowserComponents().length + listBrowserGroups().length + listBrowserThemes().length;
+  const recordCount =
+    listBrowserComponents().length +
+    listBrowserGroups().length +
+    listBrowserThemes().length +
+    buildBrowserSourceIndexRecords().length;
 
   return {
     duckdbAvailable: false,
@@ -549,7 +586,130 @@ function buildBrowserIndexRecords(): CatalogResult[] {
       .join(", ")}. Themes: ${group.group.themes.join(", ")}.`,
   }));
 
-  return [...components, ...themes, ...groups].sort((left, right) => left.recordType.localeCompare(right.recordType) || left.title.localeCompare(right.title));
+  return [...components, ...themes, ...groups, ...buildBrowserSourceIndexRecords()].sort(
+    (left, right) => left.recordType.localeCompare(right.recordType) || left.title.localeCompare(right.title),
+  );
+}
+
+function listBrowserSources(): SourceSummary[] {
+  return [browserLocalTomlCatalog(), browserShadcnCatalog()].map((catalog) => catalog.source);
+}
+
+function loadBrowserSourceCatalog(sourceId: string): SourceCatalog {
+  const catalog = [browserLocalTomlCatalog(), browserShadcnCatalog()].find((item) => item.source.id === sourceId);
+  if (!catalog) throw new Error(`Source ${sourceId} was not found in browser metadata.`);
+  return clone(catalog);
+}
+
+function buildBrowserSourceIndexRecords(): CatalogResult[] {
+  return [browserLocalTomlCatalog(), browserShadcnCatalog()].flatMap((catalog) => [
+    {
+      id: `source:${catalog.source.id}`,
+      recordType: "source" as const,
+      title: catalog.source.name,
+      body: `${catalog.source.description} Adapter: ${catalog.source.adapter}. Kind: ${catalog.source.kind}. Location: ${catalog.source.location}. Items: ${catalog.items.length}.`,
+    },
+    ...catalog.items.map((item) => ({
+      id: `${catalog.source.adapter === "shadcn" ? "shadcn-component" : "source-item"}:${item.id}`,
+      recordType: catalog.source.adapter === "shadcn" ? ("shadcn-component" as const) : ("source-item" as const),
+      title: item.name,
+      body: `${item.description} Source: ${catalog.source.name}. Type: ${item.itemType}. Files: ${item.files.join(", ")}. Dependencies: ${
+        item.dependencies.length ? item.dependencies.join(", ") : "none"
+      }. Preview: ${item.previewStatus}.`,
+    })),
+  ]);
+}
+
+function browserLocalTomlCatalog(): SourceCatalog {
+  const items: SourceCatalogItem[] = [
+    ...listBrowserComponentFiles().map((component) => ({
+      id: `local-toml:component:${component.component.id}`,
+      name: component.component.name,
+      itemType: "component",
+      description: component.component.description,
+      files: [`metadata/components/${component.component.id}.toml`],
+      dependencies: [],
+      sourcePath: "metadata/components",
+      previewStatus: "native",
+    })),
+    ...listBrowserGroupFiles().map((group) => ({
+      id: `local-toml:group:${group.group.id}`,
+      name: group.group.name,
+      itemType: "group",
+      description: group.group.description,
+      files: [`metadata/groups/${group.group.id}.toml`],
+      dependencies: [],
+      sourcePath: "metadata/groups",
+      previewStatus: "native",
+    })),
+    ...listBrowserThemeFiles().map((theme) => ({
+      id: `local-toml:theme:${theme.theme.id}`,
+      name: theme.theme.name,
+      itemType: "theme",
+      description: theme.theme.description,
+      files: [`metadata/themes/${theme.theme.id}.toml`],
+      dependencies: [],
+      sourcePath: "metadata/themes",
+      previewStatus: "native",
+    })),
+  ];
+
+  return {
+    source: {
+      id: "local-toml",
+      name: "Local TOML Metadata",
+      description: "Built-in Theme Preview component, group, and theme metadata.",
+      adapter: "local-toml",
+      kind: "local-directory",
+      location: "metadata",
+      enabled: true,
+      itemCount: items.length,
+      status: "ready",
+    },
+    items,
+    warnings: [],
+  };
+}
+
+function browserShadcnCatalog(): SourceCatalog {
+  const items: SourceCatalogItem[] = [
+    {
+      id: "shadcn-fixture:button",
+      name: "Button",
+      itemType: "registry:ui",
+      description: "Action button fixture shaped like a shadcn registry item.",
+      files: ["components/ui/button.tsx"],
+      dependencies: ["@radix-ui/react-slot", "class-variance-authority"],
+      sourcePath: "examples/shadcn-registry/registry.json",
+      previewStatus: "indexed",
+    },
+    {
+      id: "shadcn-fixture:card",
+      name: "Card",
+      itemType: "registry:ui",
+      description: "Surface fixture for adapter catalog and preview planning.",
+      files: ["components/ui/card.tsx"],
+      dependencies: [],
+      sourcePath: "examples/shadcn-registry/registry.json",
+      previewStatus: "indexed",
+    },
+  ];
+
+  return {
+    source: {
+      id: "shadcn-fixture",
+      name: "shadcn Fixture Registry",
+      description: "Local shadcn-style registry fixture used to exercise adapter indexing without network access.",
+      adapter: "shadcn",
+      kind: "local-directory",
+      location: "examples/shadcn-registry",
+      enabled: true,
+      itemCount: items.length,
+      status: "ready",
+    },
+    items,
+    warnings: [],
+  };
 }
 
 function validateGroupAgainstComponents(group: GroupFile, components: ComponentFile[]): GroupValidation {
@@ -726,14 +886,17 @@ function App() {
   const [componentFiles, setComponentFiles] = useState<Record<string, ComponentFile>>({});
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [groupFiles, setGroupFiles] = useState<Record<string, GroupFile>>({});
+  const [sources, setSources] = useState<SourceSummary[]>([]);
   const [themes, setThemes] = useState<ThemeSummary[]>([]);
-  const [activeLibrary, setActiveLibrary] = useState<"components" | "groups">("components");
+  const [activeLibrary, setActiveLibrary] = useState<"components" | "groups" | "sources">("components");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [selectedComponentId, setSelectedComponentId] = useState("button");
   const [selectedGroupId, setSelectedGroupId] = useState("settings-row");
+  const [selectedSourceId, setSelectedSourceId] = useState("local-toml");
   const [selectedThemeId, setSelectedThemeId] = useState("light");
   const [component, setComponent] = useState<ComponentFile | null>(null);
   const [group, setGroup] = useState<GroupFile | null>(null);
+  const [sourceCatalog, setSourceCatalog] = useState<SourceCatalog | null>(null);
   const [theme, setTheme] = useState<ThemeFile | null>(null);
   const [themeFiles, setThemeFiles] = useState<ThemeFile[]>([]);
   const [propValues, setPropValues] = useState<Record<string, string>>({});
@@ -765,10 +928,11 @@ function App() {
   useEffect(() => {
     async function boot() {
       try {
-        const [componentList, groupList, themeList, environment, latestReport, recentReports] = await Promise.all([
+        const [componentList, groupList, themeList, sourceList, environment, latestReport, recentReports] = await Promise.all([
           invoke<ComponentSummary[]>("list_components"),
           invoke<GroupSummary[]>("list_groups"),
           invoke<ThemeSummary[]>("list_themes"),
+          invoke<SourceSummary[]>("list_sources"),
           invoke<EnvironmentStatus>("initialize_local_index"),
           invoke<ScreenshotReportSummary | null>("latest_screenshot_report"),
           invoke<ScreenshotReportSummary[]>("recent_screenshot_reports", { limit: 5 }),
@@ -776,12 +940,14 @@ function App() {
 
         setComponents(componentList);
         setGroups(groupList);
+        setSources(sourceList);
         setThemes(themeList);
         setStatus(environment);
         setScreenshotReport(latestReport);
         setScreenshotReports(recentReports);
         setSelectedComponentId(componentList[0]?.id ?? "button");
         setSelectedGroupId(groupList[0]?.id ?? "settings-row");
+        setSelectedSourceId(sourceList[0]?.id ?? "local-toml");
         setSelectedThemeId(themeList[0]?.id ?? "light");
       } catch (caught) {
         setError(String(caught));
@@ -868,6 +1034,17 @@ function App() {
       })
       .catch((caught) => setError(String(caught)));
   }, [selectedGroupId]);
+
+  useEffect(() => {
+    if (!selectedSourceId) return;
+
+    invoke<SourceCatalog>("load_source_catalog", { sourceId: selectedSourceId })
+      .then((loaded) => {
+        setSourceCatalog(loaded);
+        setError(null);
+      })
+      .catch((caught) => setError(String(caught)));
+  }, [selectedSourceId]);
 
   useEffect(() => {
     if (!group) return;
@@ -962,6 +1139,10 @@ function App() {
     () => filterLibraryItems(groups, libraryQuery, (item) => `${item.name} ${item.description} ${item.layout}`),
     [groups, libraryQuery],
   );
+  const filteredSources = useMemo(
+    () => filterLibraryItems(sources, libraryQuery, (item) => `${item.name} ${item.description} ${item.adapter} ${item.location}`),
+    [sources, libraryQuery],
+  );
   const visualChecks = useMemo(
     () =>
       buildVisualChecks({
@@ -986,7 +1167,8 @@ function App() {
   }
 
   function openCatalogResult(result: CatalogResult) {
-    const [, id] = result.id.split(":");
+    const [kind, ...idParts] = result.id.split(":");
+    const id = idParts.join(":");
 
     if (result.recordType === "component") {
       setActiveLibrary("components");
@@ -1004,6 +1186,20 @@ function App() {
 
     if (result.recordType === "theme") {
       setSelectedThemeId(id);
+    }
+
+    if (result.recordType === "source") {
+      setActiveLibrary("sources");
+      setSelectedSourceId(id);
+      setIsGroupBoardOpen(false);
+      setIsReportOpen(false);
+    }
+
+    if (result.recordType === "shadcn-component" || result.recordType === "source-item") {
+      setActiveLibrary("sources");
+      setSelectedSourceId(id.split(":")[0] || kind);
+      setIsGroupBoardOpen(false);
+      setIsReportOpen(false);
     }
   }
 
@@ -1103,6 +1299,8 @@ function App() {
       ? "Group Board"
       : activeLibrary === "groups"
       ? group?.group.name ?? "Loading"
+      : activeLibrary === "sources"
+      ? sourceCatalog?.source.name ?? "Loading"
       : component?.component.name ?? "Loading";
 
   return (
@@ -1177,8 +1375,8 @@ function App() {
       <section className="workspace">
         <aside className="sidebar" aria-label="Components">
           <div className="panel-heading">
-            {activeLibrary === "components" ? <Search size={17} /> : <GalleryHorizontalEnd size={17} />}
-            <span>{activeLibrary === "components" ? "Components" : "Groups"}</span>
+            {activeLibrary === "components" ? <Search size={17} /> : activeLibrary === "groups" ? <GalleryHorizontalEnd size={17} /> : <Database size={17} />}
+            <span>{activeLibrary === "components" ? "Components" : activeLibrary === "groups" ? "Groups" : "Sources"}</span>
           </div>
           <div className="library-tabs" aria-label="Library mode">
             <button
@@ -1190,6 +1388,9 @@ function App() {
             </button>
             <button className={activeLibrary === "groups" ? "active" : ""} onClick={() => setActiveLibrary("groups")} type="button">
               Groups
+            </button>
+            <button className={activeLibrary === "sources" ? "active" : ""} onClick={() => setActiveLibrary("sources")} type="button">
+              Sources
             </button>
           </div>
           <label className="library-filter">
@@ -1203,8 +1404,8 @@ function App() {
             />
           </label>
           <div className="component-list">
-            {activeLibrary === "components"
-              ? filteredComponents.map((item) => (
+            {activeLibrary === "components" ? (
+              filteredComponents.map((item) => (
                   <button
                     className={`component-row ${item.id === selectedComponentId ? "selected" : ""}`}
                     key={item.id}
@@ -1221,7 +1422,8 @@ function App() {
                     <em>{item.stateCount}</em>
                   </button>
                 ))
-              : filteredGroups.map((item) => (
+            ) : activeLibrary === "groups" ? (
+              filteredGroups.map((item) => (
                   <button
                     className={`component-row ${item.id === selectedGroupId && !isGroupBoardOpen ? "selected" : ""}`}
                     key={item.id}
@@ -1238,9 +1440,30 @@ function App() {
                     </span>
                     <em>{item.itemCount}</em>
                   </button>
-                ))}
+                ))
+            ) : (
+              filteredSources.map((item) => (
+                <button
+                  className={`component-row ${item.id === selectedSourceId ? "selected" : ""}`}
+                  key={item.id}
+                  onClick={() => {
+                    setSelectedSourceId(item.id);
+                    setIsGroupBoardOpen(false);
+                    setIsReportOpen(false);
+                  }}
+                  type="button"
+                >
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>{item.adapter} · {item.location}</small>
+                  </span>
+                  <em>{item.itemCount}</em>
+                </button>
+              ))
+            )}
             {!isLoading && activeLibrary === "components" && !filteredComponents.length && <p className="catalog-note">No matching components.</p>}
             {!isLoading && activeLibrary === "groups" && !filteredGroups.length && <p className="catalog-note">No matching groups.</p>}
+            {!isLoading && activeLibrary === "sources" && !filteredSources.length && <p className="catalog-note">No matching sources.</p>}
             {isLoading && <LoadingRows />}
           </div>
         </aside>
@@ -1258,7 +1481,9 @@ function App() {
           </div>
 
           <div className="canvas">
-            {activeLibrary === "groups" && isGroupBoardOpen ? (
+            {activeLibrary === "sources" && sourceCatalog ? (
+              <SourcePreview catalog={sourceCatalog} />
+            ) : activeLibrary === "groups" && isGroupBoardOpen ? (
               <GroupBoard
                 duplicateGroups={duplicateGroups}
                 groups={groups}
@@ -1322,7 +1547,14 @@ function App() {
           </div>
 
           <div className="state-strip" aria-label="Preview states">
-            {activeLibrary === "groups" && isGroupBoardOpen
+            {activeLibrary === "sources" && sourceCatalog
+              ? sourceCatalog.items.map((item) => (
+                  <button className="state-chip" key={item.id} type="button">
+                    <Circle size={12} />
+                    {item.name}
+                  </button>
+                ))
+              : activeLibrary === "groups" && isGroupBoardOpen
               ? groups.map((item) => (
                   <button
                     className="state-chip"
@@ -1404,6 +1636,8 @@ function App() {
               reports={screenshotReports}
               onSelectReport={setScreenshotReport}
             />
+          ) : activeLibrary === "sources" && sourceCatalog ? (
+            <SourceInspector catalog={sourceCatalog} />
           ) : activeLibrary === "groups" && isGroupBoardOpen ? (
             <BoardInspector
               duplicateGroups={duplicateGroups}
@@ -2087,6 +2321,75 @@ function DuplicateGroupPanel({
   );
 }
 
+function SourcePreview({ catalog }: { catalog: SourceCatalog }) {
+  const byType = catalog.items.reduce<Record<string, number>>((counts, item) => {
+    counts[item.itemType] = (counts[item.itemType] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  return (
+    <section className="source-preview">
+      <header>
+        <span>{catalog.source.adapter}</span>
+        <strong>{catalog.source.name}</strong>
+      </header>
+      <p>{catalog.source.description}</p>
+      <dl>
+        <div>
+          <dt>Location</dt>
+          <dd>{catalog.source.location}</dd>
+        </div>
+        <div>
+          <dt>Items</dt>
+          <dd>{catalog.items.length}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{catalog.source.status}</dd>
+        </div>
+      </dl>
+      <div className="source-type-row">
+        {Object.entries(byType).map(([type, count]) => (
+          <span key={type}>
+            {type}: {count}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SourceInspector({ catalog }: { catalog: SourceCatalog }) {
+  return (
+    <section className="source-inspector">
+      <div className="source-summary">
+        <strong>{catalog.source.adapter}</strong>
+        <span>{catalog.source.kind}</span>
+        <small>{catalog.source.location}</small>
+      </div>
+      {catalog.warnings.map((warning) => (
+        <p className="catalog-error" key={warning}>
+          {warning}
+        </p>
+      ))}
+      <div className="source-items">
+        {catalog.items.map((item) => (
+          <article className="source-item" key={item.id}>
+            <header>
+              <span>{item.itemType}</span>
+              <strong>{item.name}</strong>
+            </header>
+            <p>{item.description}</p>
+            <small>Preview: {item.previewStatus}</small>
+            <small>Files: {item.files.length ? item.files.join(", ") : "none"}</small>
+            <small>Dependencies: {item.dependencies.length ? item.dependencies.join(", ") : "none"}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CatalogPanel({
   error,
   indexReady,
@@ -2125,6 +2428,8 @@ function CatalogPanel({
           <option value="component">components</option>
           <option value="group">groups</option>
           <option value="theme">themes</option>
+          <option value="source">sources</option>
+          <option value="shadcn-component">shadcn components</option>
         </select>
       </label>
       {!indexReady && <p className="catalog-note">DuckDB is not ready, so the catalog is using file previews only.</p>}

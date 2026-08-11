@@ -7,6 +7,7 @@ The app currently understands three metadata types:
 - components
 - themes
 - groups
+- sources
 
 DuckDB is only a derived catalog. If there is a disagreement, the TOML files win.
 
@@ -125,3 +126,28 @@ The app reports:
 - empty role label
 
 Blocking errors prevent saving. Warnings can be reviewed while keeping the workflow moving.
+
+## Sources
+
+Source files live in:
+
+```text
+metadata/sources
+```
+
+A source defines where component catalog material comes from:
+
+- `id`
+- `name`
+- `description`
+- `adapter`
+- `kind`
+- `location`
+- `enabled`
+
+The current adapters are:
+
+- `local-toml`: indexes this project’s component, group, and theme TOML.
+- `shadcn`: indexes a local shadcn-style registry or component directory.
+
+For shadcn sources, `location` can point at a local directory with a root `registry.json`. If no registry is present, the adapter scans `components/ui/*.tsx` as a partial catalog. The imported entries keep file paths, dependencies, source location, and preview status so they can be inspected before any future materialization step.

@@ -27,26 +27,28 @@ The useful direction is still not “add everything at once.” It is to make co
 - in-app summary of the latest screenshot comparison report with quick actions, filtered counts, review state, exported decisions, and loaded-decision indicators
 - DuckDB-backed catalog indexing when available
 - catalog search
+- source records under `metadata/sources`
+- first shadcn adapter slice for local registry or `components/ui/*.tsx` directory indexing
+- Sources library tab and source catalog inspector
 
 ## Next: Source Adapters
 
 1. Define source records
 
-Add a small source model that can describe where component catalog material comes from. The first records should cover:
+Source records now describe where component catalog material comes from. The first records cover:
 
 - local TOML metadata in this project
 - a local directory containing shadcn-style component files
-- a public GitHub shadcn registry or repository with registry metadata
 
-Source records should preserve adapter name, source path or URL, display name, last indexed time, and whether the indexed catalog is derived.
+Next useful additions are source add/edit UI, last indexed time, public GitHub source records, and clearer derived-catalog freshness.
 
 2. Add shadcn import to the books
 
-shadcn should be the first external adapter because its registry conventions provide a practical bridge from open-source component code into Theme Preview’s catalog. The initial shadcn adapter should plan for:
+shadcn is the first external adapter because its registry conventions provide a practical bridge from open-source component code into Theme Preview’s catalog. The current adapter can index local registry metadata and local `components/ui/*.tsx` files. The next shadcn adapter work should add:
 
-- reading a local directory without moving source files
 - reading public GitHub registry metadata where available
-- indexing component names, files, dependencies, props/examples when discoverable, and provenance
+- source add/edit UI for local directories
+- richer prop/example inference when discoverable
 - importing or materializing selected components only by explicit user action
 - previewing imported components beside existing TOML components
 
