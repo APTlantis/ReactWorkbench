@@ -12,7 +12,7 @@ title = "Theme Preview"
 kind = "project"
 class = "project"
 status = "release-prep"
-description = "Local-first Tauri desktop laboratory for deterministic UI component, theme-token, and reusable component-group previews from TOML metadata."
+description = "Local-first Tauri desktop laboratory for deterministic UI component, theme-token, reusable component-group, source-adapter, and future page-builder previews."
 tags = [
     "desktop-app",
     "tauri",
@@ -123,6 +123,7 @@ known_gaps = [
     "Signing is not configured; current signing posture is unsigned until proven otherwise.",
     "Git status requires non-global safe.directory handling because of local ownership metadata.",
     "D:\\Development.manifest.toml is referenced by root instructions but was absent during onboarding; this project does not create it.",
+    "Source adapters, shadcn import, and page-builder foundations are planned but not implemented yet.",
 ]
 technical_debt = "moderate"
 
@@ -208,11 +209,16 @@ primary_concepts = [
     "component metadata",
     "theme tokens",
     "component groups",
+    "source adapters",
+    "shadcn import",
+    "page builder foundation",
     "visual verification",
     "screenshot comparison",
 ]
 related_domains = [
     "design systems",
+    "component source adapters",
+    "local-first UI builders",
     "local-first desktop tools",
     "release verification",
 ]
@@ -221,7 +227,7 @@ complexity = "moderate"
 [visual]
 theme = "metadata-defined light, dark, and aurora themes"
 primary_color = "theme-dependent"
-semantic_role = "component preview and visual review laboratory"
+semantic_role = "component preview, source-adapter, and future page-builder laboratory"
 contains_svg_assets = true
 contains_scene_art = false
 
@@ -247,5 +253,5 @@ authoritative_docs = [
     "docs\\Theme-Preview - Release Checklist.md",
 ]
 safe_to_modify = true
-notes = "Preserve TOML metadata as source of truth. Do not claim DRS release readiness until artifact hashes, install, launch, uninstall, and docs inclusion are verified."
+notes = "Preserve TOML metadata and future source records as inspectable sources of truth. Do not claim DRS release readiness until artifact hashes, install, launch, uninstall, and docs inclusion are verified."
 

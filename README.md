@@ -1,15 +1,15 @@
 # Theme Preview
 
-Theme Preview is a Tauri 2 desktop laboratory for inspecting UI components, theme tokens, and reusable component groups from explicit TOML metadata.
+Theme Preview is a Tauri 2 desktop laboratory for inspecting UI components, theme tokens, and reusable component groups from explicit TOML metadata. It is also the foundation for a local-first UI builder that can work with imported component systems.
 
-It is intentionally deterministic. The app is not a page builder, Figma replacement, or generative design tool. It is a place to define components, states, themes, and named UI areas, then inspect how those definitions behave alone, together, and across themes.
+It is intentionally deterministic. The current app is a place to define components, states, themes, and named UI areas, then inspect how those definitions behave alone, together, and across themes. The longer-term product direction is to add source adapters, starting with shadcn-compatible imports, then build pages from selected local and imported components.
 
 ## What It Does
 
 - Loads component metadata from `metadata/components`.
 - Loads theme token sets from `metadata/themes`.
 - Loads named component groups from `metadata/groups`.
-- Previews component states for buttons, cards, badges, inputs, and toggles.
+- Previews component states for buttons, cards, badges, inputs, toggles, tabs, and table controls.
 - Switches themes and compares theme token values.
 - Shows a board of saved groups and an inspector for the selected group.
 - Lets you compose, edit, validate, and save groups inside the app.
@@ -21,8 +21,9 @@ It is intentionally deterministic. The app is not a page builder, Figma replacem
 - Compares screenshot exports against metadata-hash snapshots and writes JSON, HTML, and Markdown reports.
 - Tracks local review decisions for changed screenshots and supports strict comparison checks for release-style verification.
 - Builds a local DuckDB catalog when DuckDB is available, with search over components, groups, and themes.
+- Plans source adapters so local TOML, shadcn-compatible repositories, and later component libraries can sit beside each other in one catalog.
 
-The TOML files are the source of truth. DuckDB, screenshots, reports, and smoke artifacts are derived outputs.
+The TOML files are the current source of truth. Future imports should add explicit source records and adapter catalogs. DuckDB, screenshots, reports, and smoke artifacts are derived outputs.
 
 ## Quick Start
 
@@ -158,6 +159,8 @@ metadata/
 
 Components define identity, supported props, named states, supported themes, and framework targets. Themes define token values for color, spacing, radii, and typography. Groups reference component states by id and arrange them into named UI areas.
 
+The planned adapter model extends this without replacing it: local TOML is the first adapter, shadcn import is the next adapter target, and later libraries should normalize into the same catalog shape before they can participate in previews or page building.
+
 Duplicate group detection is based on a structural signature: group layout plus the ordered `component:state` item sequence. Names, descriptions, roles, and theme lists do not affect duplicate matching. See [Duplicate Structures](docs/METADATA.md#duplicate-structures) for the authoring rule.
 
 The seeded `metadata/groups/settings-row.toml` and `metadata/groups/settings-review-row.toml` files intentionally share this signature:
@@ -190,4 +193,4 @@ artifacts/      Generated smoke, screenshot, and comparison outputs
 
 The human decides what belongs together. The app removes the repetitive work of checking whether those pieces still look right across states, themes, layouts, and saved combinations.
 
-That keeps the system inspectable. Later search or AI-assisted workflows can help navigate larger catalogs, but the underlying definitions should stay portable, local, and predictable.
+That keeps the system inspectable. Later page building, search, or AI-assisted workflows can help navigate and assemble larger catalogs, but the underlying definitions should stay portable, local, and predictable.

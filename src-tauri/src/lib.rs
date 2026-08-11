@@ -1347,7 +1347,13 @@ mod tests {
             .join("components");
         let components: Vec<ComponentFile> = read_all_toml(&dir).expect("components should parse");
 
-        assert_eq!(components.len(), 5);
+        assert_eq!(components.len(), 7);
+        assert!(components
+            .iter()
+            .any(|component| component.component.id == "tabs"));
+        assert!(components
+            .iter()
+            .any(|component| component.component.id == "table-control"));
         assert!(components.iter().all(|component| component.framework.react));
         assert!(components
             .iter()
@@ -1380,7 +1386,13 @@ mod tests {
             .join("groups");
         let groups: Vec<GroupFile> = read_all_toml(&dir).expect("groups should parse");
 
-        assert_eq!(groups.len(), 9);
+        assert_eq!(groups.len(), 11);
+        assert!(groups
+            .iter()
+            .any(|group| group.group.id == "catalog-tabs"));
+        assert!(groups
+            .iter()
+            .any(|group| group.group.id == "table-controls"));
         assert!(groups.iter().all(|group| !group.items.is_empty()));
         assert!(groups.iter().all(|group| !group.group.layout.is_empty()));
     }

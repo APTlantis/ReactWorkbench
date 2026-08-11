@@ -15,9 +15,9 @@ Inherit the drive and DRS portfolio instructions when located under `D:\DRS`.
 
 ## Project boundaries
 
-Theme Preview is a local-first Tauri desktop laboratory for deterministic UI component, theme-token, and component-group preview metadata. TOML files under `metadata/` are source material. DuckDB catalogs, screenshots, reports, `dist`, smoke output, and Tauri build output are derived artifacts.
+Theme Preview is a local-first Tauri desktop laboratory for deterministic UI component, theme-token, and component-group preview metadata, growing toward a local-first UI builder through explicit source adapters. TOML files under `metadata/` are current source material. Future imported libraries should be represented by source records and adapter catalogs. DuckDB catalogs, screenshots, reports, `dist`, smoke output, and Tauri build output are derived artifacts.
 
-Do not turn this project into a page builder, Figma replacement, generative UI designer, or public plugin ecosystem without refreshing the PPS proposal first.
+The PPS proposal has been refreshed to include source adapters, shadcn import, and phased page-builder foundations. Continue to avoid Figma replacement workflows, prompt-only generative UI design, or a public plugin ecosystem unless the PPS proposal is refreshed again.
 
 ## Build and verification
 

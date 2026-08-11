@@ -1,6 +1,8 @@
 # Roadmap
 
-This project started as a first-day prototype, so the roadmap should stay practical. The useful direction is not “add everything.” It is to keep making component combinations easier to define, scan, and trust.
+Theme Preview started as a deterministic component preview lab so the hard parts would be inspectable before the product became a builder. That remains the right foundation, but the broader direction is now explicit: this should grow into a local-first UI builder that can work with local metadata and imported open-source component systems.
+
+The useful direction is still not “add everything at once.” It is to make component sources easy to register, inspect, preview, compose, and verify.
 
 ## Already Working
 
@@ -10,61 +12,103 @@ This project started as a first-day prototype, so the roadmap should stay practi
 - TOML component metadata
 - TOML theme metadata
 - TOML group metadata
-- component preview across buttons, cards, badges, inputs, and toggles
-- theme switching
-- theme comparison
-- theme token inspection
-- group preview
-- group board
-- duplicate group structure detection in the board, matching board cards, group inspector, persisted board filter, board inspector count, board inspector filter state, board inspector quick reset, duplicate-list jump targets, jump-control smoke coverage, filter-reset smoke coverage, filter-persistence smoke coverage, seeded duplicate-badge smoke coverage, selected-group similar-panel smoke coverage, and compact duplicate smoke summary
-- in-app group composer
-- editing existing groups
-- richer group layouts for toolbars, form rows, dialog footers, and table headers
-- deterministic group validation
-- explicit warning-review state in the group composer
-- deterministic preview checks for visible copy, theme contrast, empty groups, and unresolved group references
-- browser smoke checks for blank renders, horizontal, vertical, and child-content clipping, unmanaged text overflow, tiny controls, computed text contrast, seeded duplicate badges, selected-group similar panels, duplicate-list jump controls, board inspector filter reset, duplicate-filter reload persistence, and screenshot report review-source messages
-- screenshot export for every browser-rendered component and group preview across every theme, with metadata-hash snapshots
-- screenshot comparison reports in JSON, HTML, and Markdown with review status, raw JSON links, browser-local review notes, exported note JSON, optional strict-check failures that honor accepted review decisions, review-decision coverage for stale or partial decisions, fixture coverage for strict decisions, generated report links, report filtering, total-count helpers, review-decision source summaries, empty review-progress copy fixtures, malformed local-decision storage fixtures and warnings, and pixel-diff artifacts for changed images
-- one-command local verification for build, compare tests, strict screenshot comparison, Rust/Tauri tests, browser smoke checks including report review-source, seeded duplicate-badge, selected-group similar-panel, duplicate-list jump, board filter-reset, and duplicate-filter reload-persistence assertions, visual smoke totals, compact duplicate smoke artifacts, duplicate coverage checklist output, and a final checklist summary
-- in-app summary of the latest screenshot comparison report with quick actions for generated report files, individual changed previews, empty review-progress summaries, local accept/dismiss review state, final reviewed status, exported review decisions, reloaded prior decisions, and current/stale loaded-decision indicators
-- DuckDB-backed catalog indexing
+- component preview across buttons, cards, badges, inputs, toggles, tabs, and table controls
+- theme switching, theme comparison, and theme token inspection
+- group preview and group board
+- metadata-backed catalog tabs and table-control sample groups
+- in-app group composer and editing
+- richer group layouts for rows, grids, stacks, toolbars, form rows, dialog footers, and table headers
+- deterministic group validation with explicit warning-review state
+- duplicate group structure detection across board cards, selected-group inspector, board inspector, duplicate-only filtering, persisted filter state, reset controls, and jump targets
+- browser smoke checks for blank renders, clipping, text overflow, tiny controls, computed contrast, seeded duplicate behavior, filter persistence, jump targets, and screenshot report review-source messages
+- screenshot export for browser-rendered component and group previews across every theme, with metadata-hash snapshots
+- screenshot comparison reports in JSON, HTML, and Markdown with review status, raw JSON links, local review notes, exported review decisions, strict-check behavior, diff images, filtering, totals, and source summaries
+- one-command local verification for build, compare tests, strict screenshot comparison, Rust/Tauri tests, browser smoke checks, duplicate smoke coverage, visual smoke totals, and final checklist summary
+- in-app summary of the latest screenshot comparison report with quick actions, filtered counts, review state, exported decisions, and loaded-decision indicators
+- DuckDB-backed catalog indexing when available
 - catalog search
 
-## Sensible Next Steps
+## Next: Source Adapters
 
-1. Improve group authoring
+1. Define source records
 
-Item reordering is now included in the composer, duplicate saved group structures are surfaced in the board, matching board cards, selected-group inspector, board inspector count, board inspector filter-state summary, board inspector quick reset, and duplicate-list jump targets with fixture-backed copy helpers, seeded metadata fixtures, README fixture notes linked to metadata guide signature rules, expanded top-level docs, browser smoke coverage, and seeded duplicate metadata counts in verification output, duplicate-only board filtering persists per browser session with reload smoke coverage, overlapping duplicate finding fixtures keep helper counts unique, mixed seeded/synthetic findings have deterministic sort coverage, seeded metadata test parsing fails loudly on missing fields, seeded duplicate item counts and ordering now have explicit drift coverage, and drafts with validation warnings now show explicit pending/accepted review state. Next useful improvement is adding a compact metadata example index to the metadata guide.
+Add a small source model that can describe where component catalog material comes from. The first records should cover:
 
-2. Add more sample component types
+- local TOML metadata in this project
+- a local directory containing shadcn-style component files
+- a public GitHub shadcn registry or repository with registry metadata
 
-Inputs and toggles are now included. Table controls, tabs, toolbar actions, dialog footers, and settings rows would make the group board more informative.
+Source records should preserve adapter name, source path or URL, display name, last indexed time, and whether the indexed catalog is derived.
 
-3. Add richer group layouts
+2. Add shadcn import to the books
 
-Toolbar, form row, dialog footer, and table header layouts are now included. Future layouts could include split panel and dashboard section.
+shadcn should be the first external adapter because its registry conventions provide a practical bridge from open-source component code into Theme Preview’s catalog. The initial shadcn adapter should plan for:
 
-4. Extend screenshot exports
+- reading a local directory without moving source files
+- reading public GitHub registry metadata where available
+- indexing component names, files, dependencies, props/examples when discoverable, and provenance
+- importing or materializing selected components only by explicit user action
+- previewing imported components beside existing TOML components
 
-Component and group previews can now be exported as images across every theme, each export is identified by a deterministic TOML metadata hash, and screenshot reports can compare latest output against a baseline snapshot with HTML review pages, Markdown summaries, explicit review status, optional strict-check failures that honor accepted review decisions, review-decision coverage for stale or partial decisions, fixture coverage for strict decisions, generated report links, report filtering, total-count helpers, persisted filter validation, exported review decision payloads, loaded decision summaries, stale decision pruning, plural-aware review progress copy, plural-aware reviewed-status copy, review-decision source summaries, empty review-progress copy fixtures, malformed browser-local decision storage fixtures and warnings, local review notes with JSON export, diff images, configurable pixel-ratio thresholds, per-pixel color tolerance, one-command local verification including Rust/Tauri tests, computed contrast, child-content clipping, and report review-source smoke assertions, contrast diagnostics with sampled colors, child-content clipping diagnostic fixtures, visual smoke issue counts by kind, visual smoke totals in verification output, and a final checklist summary, and an in-app summary with quick actions for generated report files, recent report history, per-theme, per-kind, and status totals with one-click filtering, review-item filtering by status, theme, and preview kind, active filtered item counts, per-report filter persistence, compact filter reset, individual changed previews, visible empty review-progress summaries, local accept/dismiss review state, stale local decision cleanup, final reviewed status, exported review decisions, reloaded prior decisions, distinct current/stale loaded-decision indicators, and a compact source line distinguishing local browser decisions from exported decisions.
+This should not assume every shadcn-like repo is perfectly structured. The adapter should start useful with partial metadata, clear warnings, and inspectable source records.
 
-5. Extend deterministic visual checks
+Reference assumption: shadcn-compatible public GitHub registry support is based on the shadcn registry model, where a public repository can expose a root `registry.json` and registry items that reference source files. Local directory support should use the same internal adapter shape even when no registry file exists.
 
-The first app checks now cover visible copy, theme contrast, empty groups, and unresolved group references. The browser smoke check also covers blank renders, horizontal, vertical, and child-content clipping, unmanaged text overflow, tiny controls, computed text contrast, seeded duplicate badges, selected-group similar panels, duplicate-list jump controls, board inspector filter reset, duplicate-filter reload persistence, and screenshot report review-source messages. Useful next checks should stay measurable:
+3. Normalize component catalogs
 
-- add a compact metadata example index to the metadata guide
+Keep local TOML as the first adapter and normalize shadcn imports into the same internal catalog concepts:
 
-6. Add embedding-assisted search later
+- component identity
+- source provenance
+- framework/runtime requirements
+- props or inferred controls
+- named examples or states
+- theme/styling requirements
+- preview support status
 
-Embeddings should help retrieve and compare existing previews. They should not replace the deterministic metadata engine.
+4. Add adapter-aware preview surfaces
 
-## Not A Priority Yet
+Imported components should appear beside local components without pretending they are native TOML. The UI should make source, adapter, preview status, and missing requirements obvious. Screenshot export and smoke checks should eventually include adapter-backed previews once they are deterministic enough.
 
-- full page generation
-- drag-and-drop editing
-- generative UI design
-- public plugin ecosystem
-- visual regression infrastructure
+## Then: Builder Foundations
 
-Those can wait until the component/group model feels unquestionably useful.
+1. Define saved page metadata
+
+A page should be an explicit local record, not a hidden generated artifact. The first page model should reference source components, groups, layout regions, props, theme, and source provenance.
+
+2. Build composition from existing primitives
+
+Start with structured layout composition rather than freeform canvas editing. Useful first layouts include sections, stacks, grids, split panels, dashboards, forms, and table areas.
+
+3. Add source switching
+
+The builder should let the user choose which component source or sources are active: local TOML, imported shadcn components, and later other adapters.
+
+4. Verify built pages
+
+Extend screenshot export, comparison reports, and visual smoke checks from components/groups to saved pages. Page output should remain reproducible from source records and page metadata.
+
+## Supporting Work
+
+- Add a compact metadata example index to the metadata guide.
+- Add smoke coverage that confirms tabs and table controls render in group previews without clipping or text overflow.
+- Improve source/catalog search so imported libraries remain usable as the catalog grows.
+- Keep report ergonomics tight enough for page-level review.
+- Revisit release packaging separately from feature expansion.
+
+## Later Adapters
+
+- Flowbite React adapter for package-oriented React/Tailwind components.
+- Additional shadcn registries and community component sets.
+- User-authored component repos.
+- Optional embedding-assisted search for large catalogs.
+
+Embeddings should help retrieve and compare existing components. They should not replace the deterministic source, adapter, group, page, or theme records.
+
+## Guardrails
+
+- Do not bypass explicit source records when importing external components.
+- Do not let generated screenshots, DuckDB catalogs, or build output become the only recoverable source of project meaning.
+- Do not make prompt-generated UI the primary model; prompts may assist selection or assembly later, but saved metadata should remain inspectable.
+- Do not treat public plugin ecosystem work as part of the first builder path.
+- Do not claim DRS release readiness until artifact hashes, install, launch, uninstall, docs inclusion, and signing posture are verified.

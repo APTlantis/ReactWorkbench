@@ -2,9 +2,11 @@
 
 ## Purpose and boundaries
 
-Theme Preview is a local-first Tauri desktop laboratory for inspecting UI components, theme tokens, and reusable component groups from explicit TOML metadata. It makes important component states and combinations visible, renderable, searchable, and checkable without becoming a page builder or generative design tool.
+Theme Preview is a local-first Tauri desktop laboratory for inspecting UI components, theme tokens, and reusable component groups from explicit TOML metadata. It makes important component states and combinations visible, renderable, searchable, and checkable.
 
-The source of truth is the TOML metadata under `metadata/components`, `metadata/groups`, and `metadata/themes`. DuckDB catalogs, screenshots, comparison reports, smoke artifacts, `dist`, and Tauri build outputs are derived.
+The first implementation is a deterministic preview studio. The long-term product direction is a fuller UI builder that can register multiple component sources, import shadcn-compatible component catalogs, and later compose pages from local and imported components.
+
+The current source of truth is the TOML metadata under `metadata/components`, `metadata/groups`, and `metadata/themes`. Future imported sources should be represented by explicit source records and adapter catalogs. DuckDB catalogs, screenshots, comparison reports, smoke artifacts, `dist`, and Tauri build outputs are derived.
 
 ## Governance
 
@@ -22,11 +24,14 @@ Lifecycle: `release-prep`.
 
 The app has a working Tauri 2 shell, React + TypeScript frontend, Rust command layer, TOML metadata catalogs, visual preview exports, screenshot comparison reports, deterministic smoke checks, and documented verification commands. `npm run verify` passed from `D:\DRS\Theme-Preview` on 2026-08-11. Existing built artifacts are preserved, but they are not certified release artifacts until a DRS release gate verifies hashes and install behavior.
 
+The planning docs now treat source adapters and shadcn import as the next product expansion before page-builder editing.
+
 ## Architecture
 
 - React + TypeScript renders the preview studio and review surfaces.
 - Rust/Tauri loads local metadata and provides the desktop shell.
 - TOML metadata describes components, groups, and themes.
+- Planned source adapters normalize external component libraries into the local catalog model.
 - Node scripts export screenshots, compare visual snapshots, review reports, and run smoke verification.
 
 ## Repository layout
@@ -58,7 +63,8 @@ Existing MSI, NSIS, executable, frontend build, screenshot, and smoke artifacts 
 - Certify or rebuild installer artifacts before any release claim.
 - Record SHA-256 hashes only after selecting final release artifacts.
 - Verify install, launch, uninstall, and docs-in-package behavior.
-- Keep the metadata guide and roadmap aligned with the deterministic TOML model.
+- Define source records for local TOML and shadcn-compatible imports.
+- Keep the metadata guide and roadmap aligned with the deterministic adapter and builder model.
 
 ## Handoff notes
 

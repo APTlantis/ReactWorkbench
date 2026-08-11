@@ -1,0 +1,62 @@
+[component]
+id = "table-control"
+name = "Table Control"
+description = "Compact table utility surface for row count, sort, paging, and selection state."
+themes = ["light", "dark", "aurora"]
+
+[framework]
+react = true
+svelte = false
+
+[[props]]
+id = "label"
+label = "Label"
+kind = "text"
+default = "Metadata rows"
+
+[[props]]
+id = "rows"
+label = "Rows"
+kind = "number"
+default = "128"
+
+[[props]]
+id = "page"
+label = "Page"
+kind = "text"
+default = "1 of 6"
+
+[[props]]
+id = "sort"
+label = "Sort"
+kind = "enum"
+default = "updated"
+values = ["updated", "name", "status"]
+
+[[props]]
+id = "selected"
+label = "Selected"
+kind = "number"
+default = "0"
+
+[[props]]
+id = "tone"
+label = "Tone"
+kind = "enum"
+default = "neutral"
+values = ["neutral", "success", "warning"]
+
+[[states]]
+id = "rows-ready"
+label = "Rows Ready"
+props = { label = "Metadata rows", rows = "128", page = "1 of 6", sort = "updated", selected = "0", tone = "neutral" }
+
+[[states]]
+id = "batch-selected"
+label = "Batch Selected"
+props = { label = "Selected rows", rows = "128", page = "3 of 6", sort = "name", selected = "12", tone = "success" }
+
+[[states]]
+id = "review-needed"
+label = "Review Needed"
+props = { label = "Review queue", rows = "18", page = "1 of 1", sort = "status", selected = "4", tone = "warning" }

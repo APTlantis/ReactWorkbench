@@ -1,0 +1,21 @@
+[group]
+id = "catalog-tabs"
+name = "Catalog Tabs"
+description = "A compact catalog navigation strip with indexing status and a primary review action."
+layout = "toolbar"
+themes = ["light", "dark", "aurora"]
+
+[[items]]
+component = "tabs"
+state = "tokens-active"
+role = "View"
+
+[[items]]
+component = "badge"
+state = "soft-info"
+role = "Status"
+
+[[items]]
+component = "button"
+state = "primary-ready"
+role = "Action"

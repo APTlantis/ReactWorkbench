@@ -2759,6 +2759,14 @@ function PreviewRenderer({ component, props }: { component: string; props: Recor
     return <PreviewToggle props={props} />;
   }
 
+  if (component === "tabs") {
+    return <PreviewTabs props={props} />;
+  }
+
+  if (component === "table-control") {
+    return <PreviewTableControl props={props} />;
+  }
+
   return <PreviewButton props={props} />;
 }
 
@@ -2952,6 +2960,58 @@ function PreviewToggle({ props }: { props: Record<string, string> }) {
         <i />
       </span>
     </button>
+  );
+}
+
+function PreviewTabs({ props }: { props: Record<string, string> }) {
+  const active = props.active ?? "overview";
+  const disabled = booleanValue(props.disabled);
+  const tabs = [
+    { id: "overview", label: props.overviewLabel ?? "Overview" },
+    { id: "tokens", label: props.tokensLabel ?? "Tokens" },
+    { id: "groups", label: props.groupsLabel ?? "Groups" },
+  ];
+
+  return (
+    <div className={`sample-tabs ${disabled ? "disabled" : ""}`} role="tablist" aria-label="Preview tabs">
+      {tabs.map((tab) => (
+        <button
+          aria-selected={tab.id === active}
+          className={tab.id === active ? "active" : ""}
+          disabled={disabled}
+          key={tab.id}
+          role="tab"
+          type="button"
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PreviewTableControl({ props }: { props: Record<string, string> }) {
+  return (
+    <div className={`sample-table-control ${props.tone ?? "neutral"}`}>
+      <header>
+        <strong>{props.label}</strong>
+        <span>{props.rows} rows</span>
+      </header>
+      <dl>
+        <div>
+          <dt>Page</dt>
+          <dd>{props.page}</dd>
+        </div>
+        <div>
+          <dt>Sort</dt>
+          <dd>{props.sort}</dd>
+        </div>
+        <div>
+          <dt>Selected</dt>
+          <dd>{props.selected}</dd>
+        </div>
+      </dl>
+    </div>
   );
 }
 

@@ -1,0 +1,55 @@
+[component]
+id = "tabs"
+name = "Tabs"
+description = "Compact tab list for switching between known metadata views."
+themes = ["light", "dark", "aurora"]
+
+[framework]
+react = true
+svelte = false
+
+[[props]]
+id = "active"
+label = "Active Tab"
+kind = "enum"
+default = "overview"
+values = ["overview", "tokens", "groups"]
+
+[[props]]
+id = "overviewLabel"
+label = "Overview Label"
+kind = "text"
+default = "Overview"
+
+[[props]]
+id = "tokensLabel"
+label = "Tokens Label"
+kind = "text"
+default = "Tokens"
+
+[[props]]
+id = "groupsLabel"
+label = "Groups Label"
+kind = "text"
+default = "Groups"
+
+[[props]]
+id = "disabled"
+label = "Disabled"
+kind = "boolean"
+default = "false"
+
+[[states]]
+id = "overview-active"
+label = "Overview Active"
+props = { active = "overview", overviewLabel = "Overview", tokensLabel = "Tokens", groupsLabel = "Groups", disabled = "false" }
+
+[[states]]
+id = "tokens-active"
+label = "Tokens Active"
+props = { active = "tokens", overviewLabel = "Overview", tokensLabel = "Tokens", groupsLabel = "Groups", disabled = "false" }
+
+[[states]]
+id = "locked-groups"
+label = "Locked Groups"
+props = { active = "groups", overviewLabel = "Overview", tokensLabel = "Tokens", groupsLabel = "Groups", disabled = "true" }
