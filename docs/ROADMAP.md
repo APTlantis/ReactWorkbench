@@ -31,8 +31,31 @@ The useful direction is still not “add everything at once.” It is to make co
 - first shadcn adapter slice for local registry or `components/ui/*.tsx` directory indexing
 - Sources library tab and source catalog inspector
 - explicit shadcn item import into local component metadata placeholders with copied source files
+- saved component variants under `metadata/variants`
+- variant-backed group items while preserving existing component-state group items
+- saved page records under `metadata/pages`
+- block-based page layout preview and editing with semantic regions
+- Blue Slate added as the default theme while existing themes remain available for comparison
 
-## Next: Source Adapters
+## Next: Variant-To-Page Builder
+
+1. Deepen the Variant Workshop
+
+Variants are now the reusable layer between stock components and groups. The next useful work is richer slot presets, more component-specific builders, better prop/state inference for imported components, and export-ready naming controls.
+
+2. Keep group composition structured
+
+Groups can consume component states or saved variants. Continue using layout presets and ordered role rows; do not add freeform component dragging.
+
+3. Mature page layout
+
+Pages are explicit metadata records with regions and ordered blocks. The page editor should stay block-based: reorder sections and move blocks between semantic regions. Avoid pixel positioning, imported page editing, and Figma-style canvas behavior.
+
+4. Prepare export
+
+The first export target should be predictable React output from saved metadata: variant component files, group/section files, page files, and a manifest. Export is a handoff to WebStorm, not an import/edit loop for arbitrary existing pages.
+
+## Source Adapters
 
 1. Define source records
 
@@ -72,11 +95,11 @@ Keep local TOML as the first adapter and normalize shadcn imports into the same 
 
 Imported components should appear beside local components without pretending they are native TOML. The UI should make source, adapter, preview status, and missing requirements obvious. Screenshot export and smoke checks should eventually include adapter-backed previews once they are deterministic enough.
 
-## Then: Builder Foundations
+## Builder Foundations
 
 1. Define saved page metadata
 
-A page should be an explicit local record, not a hidden generated artifact. The first page model should reference source components, groups, layout regions, props, theme, and source provenance.
+Implemented first slice: a page is an explicit local record, not a hidden generated artifact. The first page model references saved variants, groups, layout regions, theme, route, and role labels.
 
 2. Build composition from existing primitives
 

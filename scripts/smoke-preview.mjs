@@ -27,6 +27,7 @@ async function main() {
       activeTitle: document.querySelector(".preview-header h2")?.textContent?.trim(),
       indexedText: document.querySelector(".status-pill span")?.textContent?.trim(),
       visualCheckSummary: document.querySelector(".visual-check-panel header strong")?.textContent?.trim(),
+      activeTheme: document.querySelector(".preview-header .eyebrow")?.textContent?.trim(),
     }));
 
     assert(!boot.error, `Unexpected error banner after boot: ${boot.error}`);
@@ -35,6 +36,37 @@ async function main() {
     assert(boot.activeTitle && boot.activeTitle !== "Loading", "Preview pane did not finish loading.");
     assert(boot.indexedText?.includes("indexed"), "Browser catalog status did not initialize.");
     assert(boot.visualCheckSummary, "Visual checks panel did not render in the inspector.");
+    assert(boot.activeTheme === "Blue Slate", `Blue Slate should be the default selected theme, found ${boot.activeTheme}.`);
+
+    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await page.locator(".component-row", { hasText: "Project Feature Card" }).first().click();
+    await page.waitForFunction(() => document.querySelector(".preview-header h2")?.textContent?.trim() === "Project Feature Card");
+    const variantPreview = await page.evaluate(() => ({
+      title: document.querySelector(".variant-card h3")?.textContent?.trim() ?? null,
+      action: document.querySelector(".variant-card button")?.textContent?.trim() ?? null,
+      slots: [...document.querySelectorAll(".state-chip")].map((node) => node.textContent?.trim()),
+    }));
+    assert(variantPreview.title === "React composition workbench", `Seeded variant title did not render: ${JSON.stringify(variantPreview)}`);
+    assert(variantPreview.action === "Open workbench", `Seeded variant action did not render: ${JSON.stringify(variantPreview)}`);
+    assert(variantPreview.slots.includes("media"), `Variant slot strip did not include media: ${JSON.stringify(variantPreview)}`);
+
+    await page.getByRole("button", { name: "Pages", exact: true }).click();
+    await page.locator(".component-row", { hasText: "Workbench Home" }).first().click();
+    await page.waitForFunction(() => document.querySelector(".preview-header h2")?.textContent?.trim() === "Workbench Home");
+    const pagePreview = await page.evaluate(() => ({
+      title: document.querySelector(".page-preview-title h3")?.textContent?.trim() ?? null,
+      blocks: [...document.querySelectorAll(".page-block > span")].map((node) => node.textContent?.trim()),
+    }));
+    assert(pagePreview.title === "Workbench Home", `Seeded page did not render: ${JSON.stringify(pagePreview)}`);
+    assert(pagePreview.blocks.includes("Saved feature card"), `Seeded page did not render the variant-backed block: ${JSON.stringify(pagePreview)}`);
+
+    await page.getByTitle("New page").click();
+    await page.waitForFunction(() => document.querySelector(".preview-header h2")?.textContent?.trim() === "New Page");
+    const firstMainBlockBefore = await page.locator(".page-region-editor", { hasText: "Main Layout" }).locator(".composer-item.nested input").first().inputValue();
+    await page.locator(".page-region-editor", { hasText: "Main Layout" }).getByTitle("Move down").first().click();
+    const firstMainBlockAfter = await page.locator(".page-region-editor", { hasText: "Main Layout" }).locator(".composer-item.nested input").first().inputValue();
+    assert(firstMainBlockBefore !== firstMainBlockAfter, "Page block move control did not reorder the main region.");
+    await page.getByRole("button", { name: "Cancel" }).click();
 
     await page.evaluate((reportPath) => {
       localStorage.setItem(

@@ -1,0 +1,45 @@
+[page]
+id = "workbench-home"
+name = "Workbench Home"
+description = "A block-based React page assembled from saved groups and variants."
+theme = "blue-slate"
+route = "/"
+
+[[regions]]
+id = "header"
+label = "Header"
+layout = "section"
+
+  [[regions.blocks]]
+  kind = "variant"
+  reference = "project-feature-card"
+  role = "Hero feature"
+  layout = "section"
+
+[[regions]]
+id = "main"
+label = "Main"
+layout = "stack"
+
+  [[regions.blocks]]
+  kind = "group"
+  reference = "dash-summary"
+  role = "Dashboard summary"
+  layout = "grid"
+
+  [[regions.blocks]]
+  kind = "group"
+  reference = "feature-card-section"
+  role = "Saved feature card"
+  layout = "section"
+
+[[regions]]
+id = "footer"
+label = "Footer"
+layout = "section"
+
+  [[regions.blocks]]
+  kind = "group"
+  reference = "confirm-footer"
+  role = "Footer actions"
+  layout = "section"

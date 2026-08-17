@@ -2,11 +2,11 @@
 
 ## Purpose and boundaries
 
-Theme Preview is a local-first Tauri desktop laboratory for inspecting UI components, theme tokens, and reusable component groups from explicit TOML metadata. It makes important component states and combinations visible, renderable, searchable, and checkable.
+Theme Preview is a local-first Tauri desktop laboratory for inspecting UI components, theme tokens, reusable component groups, saved variants, and block-based pages from explicit TOML metadata. It makes important component states, combinations, and page assemblies visible, renderable, searchable, and checkable.
 
-The first implementation is a deterministic preview studio. The long-term product direction is a fuller UI builder that can register multiple component sources, import shadcn-compatible component catalogs, and later compose pages from local and imported components.
+The first implementation is a deterministic preview studio. The current builder rule is: components are configured, groups are composed, and pages are arranged. The long-term product direction is a fuller UI builder that can register multiple component sources, import shadcn-compatible component catalogs, save reusable component variants, and compose pages from local and imported components.
 
-The current source of truth is the TOML metadata under `metadata/components`, `metadata/groups`, and `metadata/themes`. Future imported sources should be represented by explicit source records and adapter catalogs. DuckDB catalogs, screenshots, comparison reports, smoke artifacts, `dist`, and Tauri build outputs are derived.
+The current source of truth is the TOML metadata under `metadata/components`, `metadata/variants`, `metadata/groups`, `metadata/pages`, and `metadata/themes`. Future imported sources should be represented by explicit source records and adapter catalogs. DuckDB catalogs, screenshots, comparison reports, smoke artifacts, `dist`, and Tauri build outputs are derived.
 
 ## Governance
 
@@ -30,13 +30,13 @@ The planning docs now treat source adapters and shadcn import as the next produc
 
 - React + TypeScript renders the preview studio and review surfaces.
 - Rust/Tauri loads local metadata and provides the desktop shell.
-- TOML metadata describes components, groups, and themes.
+- TOML metadata describes components, variants, groups, pages, and themes.
 - Planned source adapters normalize external component libraries into the local catalog model.
 - Node scripts export screenshots, compare visual snapshots, review reports, and run smoke verification.
 
 ## Repository layout
 
-- `metadata/`: source TOML for components, groups, and themes.
+- `metadata/`: source TOML for components, variants, groups, pages, sources, and themes.
 - `src/`: React + TypeScript frontend.
 - `src-tauri/`: Rust/Tauri desktop shell, commands, icons, and build output.
 - `scripts/`: screenshot, comparison, smoke, report, and verification scripts.

@@ -10,6 +10,7 @@ async function main() {
   await runCheck(checks, "Build", () => runNpm(["run", "build"]));
   await runCheck(checks, "Compare fixtures", () => runNpm(["run", "test:compare"]));
   await runCheck(checks, "Duplicate group fixtures", () => runNpm(["run", "test:groups"]));
+  await runCheck(checks, "Page layout fixtures", () => runNpm(["run", "test:pages"]));
   await runCheck(checks, "Report review fixtures", () => runNpm(["run", "test:reports"]));
   await runCheck(checks, "Strict screenshot comparison", () => runNpm(["run", "compare:screenshots:strict"]));
   await runCheck(checks, "Rust/Tauri tests", () => run(cargoCommand(), ["test"], { cwd: "src-tauri" }));

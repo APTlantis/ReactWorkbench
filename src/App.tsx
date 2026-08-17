@@ -40,6 +40,7 @@ import {
   type DuplicateGroupFinding,
   type DuplicateGroupPanelMode,
 } from "./group-duplicates";
+import { movePageBlockToRegion, reorderPageBlock } from "./page-layout";
 import {
   emptyReviewProgressCopy,
   filterReportReviewItems,
@@ -119,9 +120,81 @@ type GroupFile = {
 };
 
 type GroupItem = {
+  kind?: "component" | "variant" | "";
   component: string;
   state: string;
+  variant?: string;
   role: string;
+};
+
+type VariantSummary = {
+  id: string;
+  name: string;
+  description: string;
+  component: string;
+  state: string;
+  slotCount: number;
+};
+
+type VariantFile = {
+  variant: {
+    id: string;
+    name: string;
+    description: string;
+    component: string;
+    state: string;
+    themes: string[];
+  };
+  framework: {
+    react: boolean;
+    svelte: boolean;
+  };
+  source: {
+    adapter: string;
+    id: string;
+    path: string;
+  };
+  props: Record<string, string>;
+  slots: VariantSlot[];
+};
+
+type VariantSlot = {
+  name: string;
+  kind: "text" | "media" | "badge" | "divider" | "action" | "metadata" | string;
+  value: string;
+};
+
+type PageSummary = {
+  id: string;
+  name: string;
+  description: string;
+  theme: string;
+  blockCount: number;
+};
+
+type PageFile = {
+  page: {
+    id: string;
+    name: string;
+    description: string;
+    theme: string;
+    route: string;
+  };
+  regions: PageRegion[];
+};
+
+type PageRegion = {
+  id: string;
+  label: string;
+  layout: PageLayout;
+  blocks: PageBlock[];
+};
+
+type PageBlock = {
+  kind: "group" | "variant";
+  reference: string;
+  role: string;
+  layout: PageLayout;
 };
 
 type ThemeSummary = {
@@ -172,9 +245,11 @@ type EnvironmentStatus = {
   message: string;
 };
 
+type CatalogRecordType = "component" | "theme" | "group" | "variant" | "page" | "source" | "shadcn-component" | "source-item";
+
 type CatalogResult = {
   id: string;
-  recordType: "component" | "theme" | "group" | "source" | "shadcn-component" | "source-item";
+  recordType: CatalogRecordType;
   title: string;
   body: string;
 };
@@ -295,6 +370,8 @@ type ScreenshotReviewExportResult = {
 };
 
 type GroupLayout = "row" | "grid" | "stack" | "toolbar" | "form-row" | "dialog-footer" | "table-header";
+type PageLayout = "stack" | "grid" | "split" | "sidebar" | "section";
+type LibraryMode = "components" | "variants" | "groups" | "pages" | "sources";
 type InvokeArgs = Record<string, unknown>;
 type TomlValue = string | number | boolean | string[] | Record<string, string>;
 
@@ -309,9 +386,13 @@ const metadataModules = import.meta.glob("../metadata/**/*.toml", {
 }) as Record<string, string>;
 
 let browserGroupFiles: GroupFile[] | null = null;
+let browserVariantFiles: VariantFile[] | null = null;
+let browserPageFiles: PageFile[] | null = null;
 let browserImportedComponents: ComponentFile[] = [];
 
 const groupLayouts: GroupLayout[] = ["row", "grid", "stack", "toolbar", "form-row", "dialog-footer", "table-header"];
+const pageLayouts: PageLayout[] = ["stack", "grid", "split", "sidebar", "section"];
+const variantSlotKinds = ["text", "media", "badge", "divider", "action", "metadata"];
 const booleanValue = (value: string | undefined) => value === "true";
 
 const emptyGroupDraft = (): GroupFile => ({
@@ -326,6 +407,72 @@ const emptyGroupDraft = (): GroupFile => ({
     { component: "badge", state: "soft-info", role: "Status" },
     { component: "card", state: "comfortable-summary", role: "Summary" },
     { component: "button", state: "primary-ready", role: "Action" },
+  ],
+});
+
+const emptyVariantDraft = (): VariantFile => ({
+  variant: {
+    id: "",
+    name: "New Card Variant",
+    description: "A saved component recipe that can be reused in groups and pages.",
+    component: "card",
+    state: "comfortable-summary",
+    themes: ["blue-slate", "light", "dark", "aurora"],
+  },
+  framework: {
+    react: true,
+    svelte: false,
+  },
+  source: {
+    adapter: "local-toml",
+    id: "local-toml",
+    path: "metadata/components/card.toml",
+  },
+  props: {
+    density: "comfortable",
+    tone: "neutral",
+    showFooter: "true",
+    title: "New reusable card",
+    metric: "94",
+  },
+  slots: [
+    { name: "media", kind: "media", value: "Preview media" },
+    { name: "header", kind: "text", value: "New reusable card" },
+    { name: "body", kind: "text", value: "Structured slots keep component editing form-driven." },
+    { name: "action", kind: "action", value: "Review" },
+  ],
+});
+
+const emptyPageDraft = (): PageFile => ({
+  page: {
+    id: "",
+    name: "New React Page",
+    description: "A block-based page assembled from saved variants and groups.",
+    theme: "blue-slate",
+    route: "/new-react-page",
+  },
+  regions: [
+    {
+      id: "header",
+      label: "Header",
+      layout: "section",
+      blocks: [{ kind: "variant", reference: "project-feature-card", role: "Hero feature", layout: "section" }],
+    },
+    {
+      id: "main",
+      label: "Main",
+      layout: "stack",
+      blocks: [
+        { kind: "group", reference: "dash-summary", role: "Dashboard summary", layout: "grid" },
+        { kind: "variant", reference: "project-feature-card", role: "Saved feature card", layout: "section" },
+      ],
+    },
+    {
+      id: "footer",
+      label: "Footer",
+      layout: "section",
+      blocks: [{ kind: "group", reference: "confirm-footer", role: "Footer actions", layout: "section" }],
+    },
   ],
 });
 
@@ -351,6 +498,26 @@ async function browserInvoke<T>(command: string, args: InvokeArgs): Promise<T> {
       return listBrowserGroups() as T;
     case "load_group":
       return loadBrowserGroup(String(args.groupId)) as T;
+    case "list_variants":
+      return listBrowserVariants() as T;
+    case "load_variant":
+      return loadBrowserVariant(String(args.variantId)) as T;
+    case "save_variant":
+      return saveBrowserVariant(args.variant as VariantFile) as T;
+    case "update_variant":
+      return updateBrowserVariant(String(args.originalVariantId), args.variant as VariantFile) as T;
+    case "validate_variant":
+      return validateVariantAgainstComponents(args.variant as VariantFile, listBrowserComponentFiles()) as T;
+    case "list_pages":
+      return listBrowserPages() as T;
+    case "load_page":
+      return loadBrowserPage(String(args.pageId)) as T;
+    case "save_page":
+      return saveBrowserPage(args.page as PageFile) as T;
+    case "update_page":
+      return updateBrowserPage(String(args.originalPageId), args.page as PageFile) as T;
+    case "validate_page":
+      return validatePageAgainstRecords(args.page as PageFile, listBrowserGroupFiles(), listBrowserVariantFiles()) as T;
     case "list_sources":
       return listBrowserSources() as T;
     case "load_source_catalog":
@@ -525,13 +692,150 @@ function normalizeGroupForSave(group: GroupFile): GroupFile {
     throw new Error("Group name must contain at least one letter or number.");
   }
 
-  const validation = validateGroupAgainstComponents(saved, listBrowserComponentFiles());
+  const validation = validateGroupAgainstComponents(saved, listBrowserComponentFiles(), listBrowserVariantFiles());
   if (validation.issues.some((issue) => issue.severity === "error")) {
     const details = validation.issues
       .filter((issue) => issue.severity === "error")
       .map((issue) => issue.title)
       .join(", ");
     throw new Error(`Group has blocking validation issues: ${details}`);
+  }
+
+  return saved;
+}
+
+function listBrowserVariants(): VariantSummary[] {
+  return listBrowserVariantFiles().map((variant) => ({
+    id: variant.variant.id,
+    name: variant.variant.name,
+    description: variant.variant.description,
+    component: variant.variant.component,
+    state: variant.variant.state,
+    slotCount: variant.slots.length,
+  }));
+}
+
+function listBrowserVariantFiles(): VariantFile[] {
+  if (!browserVariantFiles) {
+    browserVariantFiles = readBrowserMetadata<VariantFile>("variants");
+  }
+
+  return browserVariantFiles.map(clone);
+}
+
+function loadBrowserVariant(variantId: string): VariantFile {
+  const variant = listBrowserVariantFiles().find((item) => item.variant.id === variantId);
+  if (!variant) throw new Error(`Variant ${variantId} was not found in browser metadata.`);
+  return clone(variant);
+}
+
+function saveBrowserVariant(variant: VariantFile): VariantFile {
+  const saved = normalizeVariantForSave(variant);
+  const variants = listBrowserVariantFiles();
+  if (variants.some((item) => item.variant.id === saved.variant.id)) {
+    throw new Error(`A variant named ${saved.variant.name} already exists. Choose a different name before saving.`);
+  }
+
+  browserVariantFiles = [...variants, saved].sort((left, right) => left.variant.id.localeCompare(right.variant.id));
+  return clone(saved);
+}
+
+function updateBrowserVariant(originalVariantId: string, variant: VariantFile): VariantFile {
+  const saved = normalizeVariantForSave(variant);
+  const variants = listBrowserVariantFiles();
+  if (variants.some((item) => item.variant.id !== originalVariantId && item.variant.id === saved.variant.id)) {
+    throw new Error(`A variant named ${saved.variant.name} already exists. Choose a different name before saving.`);
+  }
+
+  browserVariantFiles = variants
+    .filter((item) => item.variant.id !== originalVariantId)
+    .concat(saved)
+    .sort((left, right) => left.variant.id.localeCompare(right.variant.id));
+  return clone(saved);
+}
+
+function normalizeVariantForSave(variant: VariantFile): VariantFile {
+  const saved = clone(variant);
+  saved.variant.id = slugify(saved.variant.name);
+  if (!saved.variant.id) {
+    throw new Error("Variant name must contain at least one letter or number.");
+  }
+
+  const validation = validateVariantAgainstComponents(saved, listBrowserComponentFiles());
+  if (validation.issues.some((issue) => issue.severity === "error")) {
+    const details = validation.issues
+      .filter((issue) => issue.severity === "error")
+      .map((issue) => issue.title)
+      .join(", ");
+    throw new Error(`Variant has blocking validation issues: ${details}`);
+  }
+
+  return saved;
+}
+
+function listBrowserPages(): PageSummary[] {
+  return listBrowserPageFiles().map((page) => ({
+    id: page.page.id,
+    name: page.page.name,
+    description: page.page.description,
+    theme: page.page.theme,
+    blockCount: page.regions.reduce((total, region) => total + region.blocks.length, 0),
+  }));
+}
+
+function listBrowserPageFiles(): PageFile[] {
+  if (!browserPageFiles) {
+    browserPageFiles = readBrowserMetadata<PageFile>("pages");
+  }
+
+  return browserPageFiles.map(clone);
+}
+
+function loadBrowserPage(pageId: string): PageFile {
+  const page = listBrowserPageFiles().find((item) => item.page.id === pageId);
+  if (!page) throw new Error(`Page ${pageId} was not found in browser metadata.`);
+  return clone(page);
+}
+
+function saveBrowserPage(page: PageFile): PageFile {
+  const saved = normalizePageForSave(page);
+  const pages = listBrowserPageFiles();
+  if (pages.some((item) => item.page.id === saved.page.id)) {
+    throw new Error(`A page named ${saved.page.name} already exists. Choose a different name before saving.`);
+  }
+
+  browserPageFiles = [...pages, saved].sort((left, right) => left.page.id.localeCompare(right.page.id));
+  return clone(saved);
+}
+
+function updateBrowserPage(originalPageId: string, page: PageFile): PageFile {
+  const saved = normalizePageForSave(page);
+  const pages = listBrowserPageFiles();
+  if (pages.some((item) => item.page.id !== originalPageId && item.page.id === saved.page.id)) {
+    throw new Error(`A page named ${saved.page.name} already exists. Choose a different name before saving.`);
+  }
+
+  browserPageFiles = pages
+    .filter((item) => item.page.id !== originalPageId)
+    .concat(saved)
+    .sort((left, right) => left.page.id.localeCompare(right.page.id));
+  return clone(saved);
+}
+
+function normalizePageForSave(page: PageFile): PageFile {
+  const saved = clone(page);
+  saved.page.id = slugify(saved.page.name);
+  if (!saved.page.id) {
+    throw new Error("Page name must contain at least one letter or number.");
+  }
+
+  const validation = validatePageAgainstRecords(saved, listBrowserGroupFiles(), listBrowserVariantFiles());
+  if (validation.issues.some((issue) => issue.severity === "error")) {
+    const details = validation.issues
+      .filter((issue) => issue.severity === "error")
+      .map((issue) => issue.title)
+      .join(", ");
+    throw new Error(`Page has blocking validation issues: ${details}`);
   }
 
   return saved;
@@ -555,6 +859,8 @@ function browserEnvironmentStatus(): EnvironmentStatus {
   const recordCount =
     listBrowserComponents().length +
     listBrowserGroups().length +
+    listBrowserVariants().length +
+    listBrowserPages().length +
     listBrowserThemes().length +
     buildBrowserSourceIndexRecords().length;
 
@@ -599,11 +905,27 @@ function buildBrowserIndexRecords(): CatalogResult[] {
     recordType: "group" as const,
     title: group.group.name,
     body: `${group.group.description} Layout: ${group.group.layout}. Items: ${group.items
-      .map((item) => `${item.role} uses ${item.component}:${item.state}`)
+      .map((item) => `${item.role} uses ${groupItemReference(item)}`)
       .join(", ")}. Themes: ${group.group.themes.join(", ")}.`,
   }));
+  const variants = listBrowserVariantFiles().map((variant) => ({
+    id: `variant:${variant.variant.id}`,
+    recordType: "variant" as const,
+    title: variant.variant.name,
+    body: `${variant.variant.description} Base: ${variant.variant.component}:${variant.variant.state}. Slots: ${variant.slots
+      .map((slot) => `${slot.name} ${slot.kind} ${slot.value}`)
+      .join(", ")}. Themes: ${variant.variant.themes.join(", ")}.`,
+  }));
+  const pages = listBrowserPageFiles().map((page) => ({
+    id: `page:${page.page.id}`,
+    recordType: "page" as const,
+    title: page.page.name,
+    body: `${page.page.description} Route: ${page.page.route}. Theme: ${page.page.theme}. Blocks: ${page.regions
+      .flatMap((region) => region.blocks.map((block) => `${region.label} uses ${block.kind}:${block.reference} as ${block.role}`))
+      .join(", ")}.`,
+  }));
 
-  return [...components, ...themes, ...groups, ...buildBrowserSourceIndexRecords()].sort(
+  return [...components, ...themes, ...groups, ...variants, ...pages, ...buildBrowserSourceIndexRecords()].sort(
     (left, right) => left.recordType.localeCompare(right.recordType) || left.title.localeCompare(right.title),
   );
 }
@@ -728,6 +1050,26 @@ function browserLocalTomlCatalog(): SourceCatalog {
       sourcePath: "metadata/groups",
       previewStatus: "native",
     })),
+    ...listBrowserVariantFiles().map((variant) => ({
+      id: `local-toml:variant:${variant.variant.id}`,
+      name: variant.variant.name,
+      itemType: "variant",
+      description: variant.variant.description,
+      files: [`metadata/variants/${variant.variant.id}.toml`],
+      dependencies: [],
+      sourcePath: "metadata/variants",
+      previewStatus: "native",
+    })),
+    ...listBrowserPageFiles().map((page) => ({
+      id: `local-toml:page:${page.page.id}`,
+      name: page.page.name,
+      itemType: "page",
+      description: page.page.description,
+      files: [`metadata/pages/${page.page.id}.toml`],
+      dependencies: [],
+      sourcePath: "metadata/pages",
+      previewStatus: "native",
+    })),
     ...listBrowserThemeFiles().map((theme) => ({
       id: `local-toml:theme:${theme.theme.id}`,
       name: theme.theme.name,
@@ -798,9 +1140,10 @@ function browserShadcnCatalog(): SourceCatalog {
   };
 }
 
-function validateGroupAgainstComponents(group: GroupFile, components: ComponentFile[]): GroupValidation {
+function validateGroupAgainstComponents(group: GroupFile, components: ComponentFile[], variants: VariantFile[] = []): GroupValidation {
   const issues: GroupValidationIssue[] = [];
   const componentMap = new Map(components.map((component) => [component.component.id, component]));
+  const variantMap = new Map(variants.map((variant) => [variant.variant.id, variant]));
   const roles = new Set<string>();
 
   if (!groupLayouts.includes(group.group.layout)) {
@@ -820,11 +1163,12 @@ function validateGroupAgainstComponents(group: GroupFile, components: ComponentF
   }
 
   group.items.forEach((item) => {
+    const kind = groupItemKind(item);
     if (!item.role.trim()) {
       issues.push({
         severity: "warning",
         title: "Missing role label",
-        detail: `${item.component}:${item.state} does not describe what it does in the area.`,
+        detail: `${groupItemReference(item)} does not describe what it does in the area.`,
       });
     } else if (roles.has(item.role.toLowerCase())) {
       issues.push({
@@ -834,6 +1178,32 @@ function validateGroupAgainstComponents(group: GroupFile, components: ComponentF
       });
     } else {
       roles.add(item.role.toLowerCase());
+    }
+
+    if (kind === "variant") {
+      if (!item.variant?.trim()) {
+        issues.push({
+          severity: "error",
+          title: "Missing variant reference",
+          detail: "Variant-backed group items must name a saved variant.",
+        });
+      } else if (!variantMap.has(item.variant)) {
+        issues.push({
+          severity: "error",
+          title: "Missing variant",
+          detail: `${item.variant} is not defined in metadata/variants.`,
+        });
+      }
+      return;
+    }
+
+    if (kind !== "component") {
+      issues.push({
+        severity: "error",
+        title: "Unsupported item kind",
+        detail: `${item.kind} is not component or variant.`,
+      });
+      return;
     }
 
     const component = componentMap.get(item.component);
@@ -862,7 +1232,109 @@ function validateGroupAgainstComponents(group: GroupFile, components: ComponentF
   };
 }
 
-function readBrowserMetadata<T>(kind: "components" | "groups" | "themes"): T[] {
+function validateVariantAgainstComponents(variant: VariantFile, components: ComponentFile[]): GroupValidation {
+  const issues: GroupValidationIssue[] = [];
+  const component = components.find((item) => item.component.id === variant.variant.component);
+
+  if (!variant.variant.name.trim()) {
+    issues.push({ severity: "error", title: "Missing variant name", detail: "A saved variant needs a reusable name." });
+  }
+
+  if (!component) {
+    issues.push({
+      severity: "error",
+      title: "Missing base component",
+      detail: `${variant.variant.component} is not defined in metadata/components.`,
+    });
+  } else if (!component.states.some((state) => state.id === variant.variant.state)) {
+    issues.push({
+      severity: "error",
+      title: "Missing base state",
+      detail: `${variant.variant.component} does not define state ${variant.variant.state}.`,
+    });
+  }
+
+  variant.slots.forEach((slot) => {
+    if (!slot.name.trim()) {
+      issues.push({ severity: "warning", title: "Unnamed slot", detail: "Variant slots should name the content area they configure." });
+    }
+    if (!slot.kind.trim()) {
+      issues.push({
+        severity: "warning",
+        title: "Missing slot kind",
+        detail: `Slot ${slot.name || "unnamed"} does not declare text, media, badge, divider, action, or metadata.`,
+      });
+    }
+  });
+
+  return validationFromIssues(issues);
+}
+
+function validatePageAgainstRecords(page: PageFile, groups: GroupFile[], variants: VariantFile[]): GroupValidation {
+  const issues: GroupValidationIssue[] = [];
+  const groupIds = new Set(groups.map((group) => group.group.id));
+  const variantIds = new Set(variants.map((variant) => variant.variant.id));
+
+  if (!page.page.name.trim()) {
+    issues.push({ severity: "error", title: "Missing page name", detail: "A page needs a name before it can be saved." });
+  }
+
+  if (!page.regions.length) {
+    issues.push({ severity: "error", title: "No page regions", detail: "A page needs at least one semantic region." });
+  }
+
+  page.regions.forEach((region) => {
+    if (!pageLayouts.includes(region.layout)) {
+      issues.push({
+        severity: "error",
+        title: "Unsupported page layout",
+        detail: `${region.layout} is not one of ${pageLayouts.join(", ")}.`,
+      });
+    }
+
+    region.blocks.forEach((block) => {
+      if (!block.role.trim()) {
+        issues.push({
+          severity: "warning",
+          title: "Missing block role",
+          detail: `${block.kind}:${block.reference} should describe its page role.`,
+        });
+      }
+
+      if (block.kind === "group" && !groupIds.has(block.reference)) {
+        issues.push({
+          severity: "error",
+          title: "Missing page group",
+          detail: `${block.reference} is not defined in metadata/groups.`,
+        });
+      } else if (block.kind === "variant" && !variantIds.has(block.reference)) {
+        issues.push({
+          severity: "error",
+          title: "Missing page variant",
+          detail: `${block.reference} is not defined in metadata/variants.`,
+        });
+      } else if (block.kind !== "group" && block.kind !== "variant") {
+        issues.push({
+          severity: "error",
+          title: "Unsupported page block",
+          detail: `${block.kind} is not group or variant.`,
+        });
+      }
+    });
+  });
+
+  return validationFromIssues(issues);
+}
+
+function validationFromIssues(issues: GroupValidationIssue[]): GroupValidation {
+  return {
+    status: issues.some((issue) => issue.severity === "error") ? "error" : issues.some((issue) => issue.severity === "warning") ? "warning" : "ready",
+    issueCount: issues.length,
+    issues,
+  };
+}
+
+function readBrowserMetadata<T>(kind: "components" | "groups" | "themes" | "variants" | "pages"): T[] {
   return Object.entries(metadataModules)
     .filter(([path]) => path.includes(`/metadata/${kind}/`) || path.includes(`\\metadata\\${kind}\\`))
     .sort(([left], [right]) => left.localeCompare(right))
@@ -872,6 +1344,7 @@ function readBrowserMetadata<T>(kind: "components" | "groups" | "themes"): T[] {
 function parseToml(content: string): TomlObject {
   const root: TomlObject = {};
   let target: TomlObject = root;
+  const arrayTargets = new Map<string, TomlObject>();
 
   content.split(/\r?\n/).forEach((line) => {
     const trimmed = line.trim();
@@ -879,19 +1352,24 @@ function parseToml(content: string): TomlObject {
 
     const arrayMatch = trimmed.match(/^\[\[(.+)\]\]$/);
     if (arrayMatch) {
-      const key = camelCase(arrayMatch[1]);
-      const items = (root[key] as TomlObject[] | undefined) ?? [];
+      const path = arrayMatch[1].split(".").map(camelCase);
+      const key = path[path.length - 1];
+      const parent = resolveTomlParent(root, path.slice(0, -1), arrayTargets);
+      const items = (parent[key] as TomlObject[] | undefined) ?? [];
       target = {};
       items.push(target);
-      root[key] = items;
+      parent[key] = items;
+      arrayTargets.set(path.join("."), target);
       return;
     }
 
     const sectionMatch = trimmed.match(/^\[(.+)\]$/);
     if (sectionMatch) {
-      const key = camelCase(sectionMatch[1]);
+      const path = sectionMatch[1].split(".").map(camelCase);
+      const key = path[path.length - 1];
+      const parent = resolveTomlParent(root, path.slice(0, -1), arrayTargets);
       target = {};
-      root[key] = target;
+      parent[key] = target;
       return;
     }
 
@@ -905,8 +1383,38 @@ function parseToml(content: string): TomlObject {
   return root;
 }
 
+function resolveTomlParent(root: TomlObject, path: string[], arrayTargets: Map<string, TomlObject>): TomlObject {
+  let target = root;
+  const seen: string[] = [];
+
+  path.forEach((part) => {
+    seen.push(part);
+    const arrayTarget = arrayTargets.get(seen.join("."));
+    if (arrayTarget) {
+      target = arrayTarget;
+      return;
+    }
+
+    const existing = target[part];
+    if (Array.isArray(existing)) {
+      target = (existing[existing.length - 1] as TomlObject | undefined) ?? target;
+    } else {
+      if (!existing || typeof existing !== "object") {
+        target[part] = {};
+      }
+      target = target[part] as TomlObject;
+    }
+  });
+
+  return target;
+}
+
 function parseTomlValue(value: string): TomlValue {
   if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1);
+  }
+
+  if (value.startsWith("'") && value.endsWith("'")) {
     return value.slice(1, -1);
   }
 
@@ -963,6 +1471,14 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function groupItemKind(item: GroupItem): "component" | "variant" | string {
+  return item.kind || "component";
+}
+
+function groupItemReference(item: GroupItem) {
+  return groupItemKind(item) === "variant" ? `variant:${item.variant ?? ""}` : `${item.component}:${item.state}`;
+}
+
 function clone<T>(value: T): T {
   return structuredClone(value);
 }
@@ -972,16 +1488,24 @@ function App() {
   const [componentFiles, setComponentFiles] = useState<Record<string, ComponentFile>>({});
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [groupFiles, setGroupFiles] = useState<Record<string, GroupFile>>({});
+  const [variants, setVariants] = useState<VariantSummary[]>([]);
+  const [variantFiles, setVariantFiles] = useState<Record<string, VariantFile>>({});
+  const [pages, setPages] = useState<PageSummary[]>([]);
+  const [, setPageFiles] = useState<Record<string, PageFile>>({});
   const [sources, setSources] = useState<SourceSummary[]>([]);
   const [themes, setThemes] = useState<ThemeSummary[]>([]);
-  const [activeLibrary, setActiveLibrary] = useState<"components" | "groups" | "sources">("components");
+  const [activeLibrary, setActiveLibrary] = useState<LibraryMode>("components");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [selectedComponentId, setSelectedComponentId] = useState("button");
   const [selectedGroupId, setSelectedGroupId] = useState("settings-row");
+  const [selectedVariantId, setSelectedVariantId] = useState("project-feature-card");
+  const [selectedPageId, setSelectedPageId] = useState("workbench-home");
   const [selectedSourceId, setSelectedSourceId] = useState("local-toml");
-  const [selectedThemeId, setSelectedThemeId] = useState("light");
+  const [selectedThemeId, setSelectedThemeId] = useState("blue-slate");
   const [component, setComponent] = useState<ComponentFile | null>(null);
   const [group, setGroup] = useState<GroupFile | null>(null);
+  const [variant, setVariant] = useState<VariantFile | null>(null);
+  const [pageRecord, setPageRecord] = useState<PageFile | null>(null);
   const [sourceCatalog, setSourceCatalog] = useState<SourceCatalog | null>(null);
   const [theme, setTheme] = useState<ThemeFile | null>(null);
   const [themeFiles, setThemeFiles] = useState<ThemeFile[]>([]);
@@ -1008,6 +1532,16 @@ function App() {
   const [isGroupComposerOpen, setIsGroupComposerOpen] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState<GroupFile>(() => emptyGroupDraft());
+  const [isVariantComposerOpen, setIsVariantComposerOpen] = useState(false);
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+  const [variantDraft, setVariantDraft] = useState<VariantFile>(() => emptyVariantDraft());
+  const [variantValidation, setVariantValidation] = useState<GroupValidation | null>(null);
+  const [draftVariantValidation, setDraftVariantValidation] = useState<GroupValidation | null>(null);
+  const [isPageComposerOpen, setIsPageComposerOpen] = useState(false);
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [pageDraft, setPageDraft] = useState<PageFile>(() => emptyPageDraft());
+  const [pageValidation, setPageValidation] = useState<GroupValidation | null>(null);
+  const [draftPageValidation, setDraftPageValidation] = useState<GroupValidation | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [groupValidation, setGroupValidation] = useState<GroupValidation | null>(null);
   const [draftValidation, setDraftValidation] = useState<GroupValidation | null>(null);
@@ -1016,9 +1550,11 @@ function App() {
   useEffect(() => {
     async function boot() {
       try {
-        const [componentList, groupList, themeList, sourceList, environment, latestReport, recentReports] = await Promise.all([
+        const [componentList, groupList, variantList, pageList, themeList, sourceList, environment, latestReport, recentReports] = await Promise.all([
           invoke<ComponentSummary[]>("list_components"),
           invoke<GroupSummary[]>("list_groups"),
+          invoke<VariantSummary[]>("list_variants"),
+          invoke<PageSummary[]>("list_pages"),
           invoke<ThemeSummary[]>("list_themes"),
           invoke<SourceSummary[]>("list_sources"),
           invoke<EnvironmentStatus>("initialize_local_index"),
@@ -1028,6 +1564,8 @@ function App() {
 
         setComponents(componentList);
         setGroups(groupList);
+        setVariants(variantList);
+        setPages(pageList);
         setSources(sourceList);
         setThemes(themeList);
         setStatus(environment);
@@ -1035,8 +1573,10 @@ function App() {
         setScreenshotReports(recentReports);
         setSelectedComponentId(componentList[0]?.id ?? "button");
         setSelectedGroupId(groupList[0]?.id ?? "settings-row");
+        setSelectedVariantId(variantList[0]?.id ?? "project-feature-card");
+        setSelectedPageId(pageList[0]?.id ?? "workbench-home");
         setSelectedSourceId(sourceList[0]?.id ?? "local-toml");
-        setSelectedThemeId(themeList[0]?.id ?? "light");
+        setSelectedThemeId(themeList.find((item) => item.id === "blue-slate")?.id ?? themeList[0]?.id ?? "light");
       } catch (caught) {
         setError(String(caught));
       } finally {
@@ -1053,6 +1593,22 @@ function App() {
     setGroups(groupList);
     setGroupFiles(Object.fromEntries(loaded.map((item) => [item.group.id, item])));
     return { groupList, loaded };
+  }
+
+  async function refreshVariants() {
+    const variantList = await invoke<VariantSummary[]>("list_variants");
+    const loaded = await Promise.all(variantList.map((item) => invoke<VariantFile>("load_variant", { variantId: item.id })));
+    setVariants(variantList);
+    setVariantFiles(Object.fromEntries(loaded.map((item) => [item.variant.id, item])));
+    return { variantList, loaded };
+  }
+
+  async function refreshPages() {
+    const pageList = await invoke<PageSummary[]>("list_pages");
+    const loaded = await Promise.all(pageList.map((item) => invoke<PageFile>("load_page", { pageId: item.id })));
+    setPages(pageList);
+    setPageFiles(Object.fromEntries(loaded.map((item) => [item.page.id, item])));
+    return { pageList, loaded };
   }
 
   useEffect(() => {
@@ -1113,6 +1669,28 @@ function App() {
   }, [groups]);
 
   useEffect(() => {
+    if (!variants.length) return;
+
+    Promise.all(variants.map((item) => invoke<VariantFile>("load_variant", { variantId: item.id })))
+      .then((loaded) => {
+        setVariantFiles(Object.fromEntries(loaded.map((item) => [item.variant.id, item])));
+        setError(null);
+      })
+      .catch((caught) => setError(String(caught)));
+  }, [variants]);
+
+  useEffect(() => {
+    if (!pages.length) return;
+
+    Promise.all(pages.map((item) => invoke<PageFile>("load_page", { pageId: item.id })))
+      .then((loaded) => {
+        setPageFiles(Object.fromEntries(loaded.map((item) => [item.page.id, item])));
+        setError(null);
+      })
+      .catch((caught) => setError(String(caught)));
+  }, [pages]);
+
+  useEffect(() => {
     if (!selectedGroupId) return;
 
     invoke<GroupFile>("load_group", { groupId: selectedGroupId })
@@ -1122,6 +1700,28 @@ function App() {
       })
       .catch((caught) => setError(String(caught)));
   }, [selectedGroupId]);
+
+  useEffect(() => {
+    if (!selectedVariantId) return;
+
+    invoke<VariantFile>("load_variant", { variantId: selectedVariantId })
+      .then((loaded) => {
+        setVariant(loaded);
+        setError(null);
+      })
+      .catch((caught) => setError(String(caught)));
+  }, [selectedVariantId]);
+
+  useEffect(() => {
+    if (!selectedPageId) return;
+
+    invoke<PageFile>("load_page", { pageId: selectedPageId })
+      .then((loaded) => {
+        setPageRecord(loaded);
+        setError(null);
+      })
+      .catch((caught) => setError(String(caught)));
+  }, [selectedPageId]);
 
   useEffect(() => {
     if (!selectedSourceId) return;
@@ -1144,6 +1744,28 @@ function App() {
       })
       .catch((caught) => setError(String(caught)));
   }, [group]);
+
+  useEffect(() => {
+    if (!variant) return;
+
+    invoke<GroupValidation>("validate_variant", { variant })
+      .then((validation) => {
+        setVariantValidation(validation);
+        setError(null);
+      })
+      .catch((caught) => setError(String(caught)));
+  }, [variant]);
+
+  useEffect(() => {
+    if (!pageRecord) return;
+
+    invoke<GroupValidation>("validate_page", { page: pageRecord })
+      .then((validation) => {
+        setPageValidation(validation);
+        setError(null);
+      })
+      .catch((caught) => setError(String(caught)));
+  }, [pageRecord]);
 
   useEffect(() => {
     if (!isGroupComposerOpen) return;
@@ -1170,9 +1792,57 @@ function App() {
   }, [editingGroupId, groupDraft, groups, isGroupComposerOpen]);
 
   useEffect(() => {
+    if (!isVariantComposerOpen) return;
+
+    const timeout = window.setTimeout(() => {
+      invoke<GroupValidation>("validate_variant", { variant: variantDraft })
+        .then((validation) => setDraftVariantValidation(addVariantDraftNameConflict(validation, variantDraft, variants, editingVariantId)))
+        .catch(() =>
+          setDraftVariantValidation({
+            status: "error",
+            issueCount: 1,
+            issues: [
+              {
+                severity: "error",
+                title: "Validation unavailable",
+                detail: "The draft could not be checked against current metadata.",
+              },
+            ],
+          }),
+        );
+    }, 120);
+
+    return () => window.clearTimeout(timeout);
+  }, [editingVariantId, isVariantComposerOpen, variantDraft, variants]);
+
+  useEffect(() => {
+    if (!isPageComposerOpen) return;
+
+    const timeout = window.setTimeout(() => {
+      invoke<GroupValidation>("validate_page", { page: pageDraft })
+        .then((validation) => setDraftPageValidation(addPageDraftNameConflict(validation, pageDraft, pages, editingPageId)))
+        .catch(() =>
+          setDraftPageValidation({
+            status: "error",
+            issueCount: 1,
+            issues: [
+              {
+                severity: "error",
+                title: "Validation unavailable",
+                detail: "The draft could not be checked against current metadata.",
+              },
+            ],
+          }),
+        );
+    }, 120);
+
+    return () => window.clearTimeout(timeout);
+  }, [editingPageId, isPageComposerOpen, pageDraft, pages]);
+
+  useEffect(() => {
     setHasReviewedDraftWarnings(false);
     setSaveMessage(null);
-  }, [groupDraft]);
+  }, [groupDraft, pageDraft, variantDraft]);
 
   useEffect(() => {
     if (!selectedThemeId) return;
@@ -1227,6 +1897,14 @@ function App() {
     () => filterLibraryItems(groups, libraryQuery, (item) => `${item.name} ${item.description} ${item.layout}`),
     [groups, libraryQuery],
   );
+  const filteredVariants = useMemo(
+    () => filterLibraryItems(variants, libraryQuery, (item) => `${item.name} ${item.description} ${item.component} ${item.state}`),
+    [variants, libraryQuery],
+  );
+  const filteredPages = useMemo(
+    () => filterLibraryItems(pages, libraryQuery, (item) => `${item.name} ${item.description} ${item.theme}`),
+    [pages, libraryQuery],
+  );
   const filteredSources = useMemo(
     () => filterLibraryItems(sources, libraryQuery, (item) => `${item.name} ${item.description} ${item.adapter} ${item.location}`),
     [sources, libraryQuery],
@@ -1237,10 +1915,14 @@ function App() {
         component: activeLibrary === "components" ? component : null,
         group: activeLibrary === "groups" && !isGroupBoardOpen ? group : null,
         groupValidation,
+        variant: activeLibrary === "variants" ? variant : null,
+        variantValidation,
+        page: activeLibrary === "pages" ? pageRecord : null,
+        pageValidation,
         props: propValues,
         theme,
       }),
-    [activeLibrary, component, group, groupValidation, isGroupBoardOpen, propValues, theme],
+    [activeLibrary, component, group, groupValidation, isGroupBoardOpen, pageRecord, pageValidation, propValues, theme, variant, variantValidation],
   );
   const duplicateGroups = useMemo(() => findDuplicateGroups(groupFiles), [groupFiles]);
 
@@ -1268,6 +1950,20 @@ function App() {
     if (result.recordType === "group") {
       setActiveLibrary("groups");
       setSelectedGroupId(id);
+      setIsGroupBoardOpen(false);
+      setIsReportOpen(false);
+    }
+
+    if (result.recordType === "variant") {
+      setActiveLibrary("variants");
+      setSelectedVariantId(id);
+      setIsGroupBoardOpen(false);
+      setIsReportOpen(false);
+    }
+
+    if (result.recordType === "page") {
+      setActiveLibrary("pages");
+      setSelectedPageId(id);
       setIsGroupBoardOpen(false);
       setIsReportOpen(false);
     }
@@ -1323,6 +2019,68 @@ function App() {
     setIsCatalogOpen(false);
     setIsReportOpen(false);
     setIsGroupComposerOpen(true);
+    setIsVariantComposerOpen(false);
+    setIsPageComposerOpen(false);
+    setSaveMessage(null);
+  }
+
+  function startVariantComposer(mode: "new" | "copy" | "edit" = "new") {
+    if ((mode === "copy" || mode === "edit") && variant) {
+      setVariantDraft({
+        ...clone(variant),
+        variant: {
+          ...variant.variant,
+          name: mode === "copy" ? `${variant.variant.name} Copy` : variant.variant.name,
+          id: mode === "edit" ? variant.variant.id : "",
+        },
+      });
+      setEditingVariantId(mode === "edit" ? variant.variant.id : null);
+    } else {
+      const draft = emptyVariantDraft();
+      const baseComponent = component ?? componentFiles[draft.variant.component];
+      if (baseComponent) {
+        draft.variant.component = baseComponent.component.id;
+        draft.variant.state = baseComponent.states[0]?.id ?? "";
+        draft.source.path = `metadata/components/${baseComponent.component.id}.toml`;
+        draft.props = { ...defaultProps(baseComponent), ...(baseComponent.states[0]?.props ?? {}) };
+      }
+      setVariantDraft(draft);
+      setEditingVariantId(null);
+    }
+
+    setActiveLibrary("variants");
+    setIsGroupBoardOpen(false);
+    setIsCatalogOpen(false);
+    setIsReportOpen(false);
+    setIsGroupComposerOpen(false);
+    setIsPageComposerOpen(false);
+    setIsVariantComposerOpen(true);
+    setSaveMessage(null);
+  }
+
+  function startPageComposer(mode: "new" | "copy" | "edit" = "new") {
+    if ((mode === "copy" || mode === "edit") && pageRecord) {
+      setPageDraft({
+        ...clone(pageRecord),
+        page: {
+          ...pageRecord.page,
+          name: mode === "copy" ? `${pageRecord.page.name} Copy` : pageRecord.page.name,
+          id: mode === "edit" ? pageRecord.page.id : "",
+        },
+      });
+      setEditingPageId(mode === "edit" ? pageRecord.page.id : null);
+    } else {
+      setPageDraft(emptyPageDraft());
+      setEditingPageId(null);
+    }
+
+    setActiveLibrary("pages");
+    setIsGroupBoardOpen(false);
+    setIsCatalogOpen(false);
+    setIsReportOpen(false);
+    setIsGroupComposerOpen(false);
+    setIsVariantComposerOpen(false);
+    setIsPageComposerOpen(true);
     setSaveMessage(null);
   }
 
@@ -1333,6 +2091,8 @@ function App() {
 
     setIsCatalogOpen(false);
     setIsGroupComposerOpen(false);
+    setIsVariantComposerOpen(false);
+    setIsPageComposerOpen(false);
 
     try {
       const [latestReport, recentReports] = await Promise.all([
@@ -1378,6 +2138,64 @@ function App() {
     }
   }
 
+  async function saveVariantDraft() {
+    if (draftVariantValidation?.status === "error") {
+      setSaveMessage("Resolve blocking issues before saving this variant.");
+      return;
+    }
+
+    if (draftVariantValidation?.status === "warning" && !hasReviewedDraftWarnings) {
+      setHasReviewedDraftWarnings(true);
+      setSaveMessage("Warnings reviewed. Save again to keep them and continue.");
+      return;
+    }
+
+    try {
+      const saved = editingVariantId
+        ? await invoke<VariantFile>("update_variant", { originalVariantId: editingVariantId, variant: variantDraft })
+        : await invoke<VariantFile>("save_variant", { variant: variantDraft });
+      await refreshVariants();
+      setSelectedVariantId(saved.variant.id);
+      setVariant(saved);
+      setIsVariantComposerOpen(false);
+      setEditingVariantId(null);
+      setSaveMessage(`Saved ${saved.variant.name}`);
+      const environment = await invoke<EnvironmentStatus>("initialize_local_index");
+      setStatus(environment);
+    } catch (caught) {
+      setSaveMessage(String(caught));
+    }
+  }
+
+  async function savePageDraft() {
+    if (draftPageValidation?.status === "error") {
+      setSaveMessage("Resolve blocking issues before saving this page.");
+      return;
+    }
+
+    if (draftPageValidation?.status === "warning" && !hasReviewedDraftWarnings) {
+      setHasReviewedDraftWarnings(true);
+      setSaveMessage("Warnings reviewed. Save again to keep them and continue.");
+      return;
+    }
+
+    try {
+      const saved = editingPageId
+        ? await invoke<PageFile>("update_page", { originalPageId: editingPageId, page: pageDraft })
+        : await invoke<PageFile>("save_page", { page: pageDraft });
+      await refreshPages();
+      setSelectedPageId(saved.page.id);
+      setPageRecord(saved);
+      setIsPageComposerOpen(false);
+      setEditingPageId(null);
+      setSaveMessage(`Saved ${saved.page.name}`);
+      const environment = await invoke<EnvironmentStatus>("initialize_local_index");
+      setStatus(environment);
+    } catch (caught) {
+      setSaveMessage(String(caught));
+    }
+  }
+
   async function importSourceItem(item: SourceCatalogItem) {
     if (!sourceCatalog) return;
 
@@ -1411,7 +2229,15 @@ function App() {
   }
 
   const activeTitle =
-    isGroupComposerOpen
+    isVariantComposerOpen
+      ? editingVariantId
+        ? "Edit Variant"
+        : "New Variant"
+      : isPageComposerOpen
+      ? editingPageId
+        ? "Edit Page"
+        : "New Page"
+      : isGroupComposerOpen
       ? editingGroupId
         ? "Edit Group"
         : "New Group"
@@ -1419,6 +2245,10 @@ function App() {
       ? "Group Board"
       : activeLibrary === "groups"
       ? group?.group.name ?? "Loading"
+      : activeLibrary === "variants"
+      ? variant?.variant.name ?? "Loading"
+      : activeLibrary === "pages"
+      ? pageRecord?.page.name ?? "Loading"
       : activeLibrary === "sources"
       ? sourceCatalog?.source.name ?? "Loading"
       : component?.component.name ?? "Loading";
@@ -1457,6 +2287,9 @@ function App() {
               setIsGroupBoardOpen((current) => !current);
               setIsComparingThemes(false);
               setIsReportOpen(false);
+              setIsGroupComposerOpen(false);
+              setIsVariantComposerOpen(false);
+              setIsPageComposerOpen(false);
             }}
             title="Group board"
             type="button"
@@ -1469,6 +2302,8 @@ function App() {
               setIsCatalogOpen((current) => !current);
               setIsReportOpen(false);
               setIsGroupComposerOpen(false);
+              setIsVariantComposerOpen(false);
+              setIsPageComposerOpen(false);
             }}
             title="Catalog search"
             type="button"
@@ -1478,7 +2313,20 @@ function App() {
           <button className={`icon-button ${isReportOpen ? "active" : ""}`} onClick={toggleReportPanel} title="Screenshot report" type="button">
             <FileCode2 size={18} />
           </button>
-          <button className={`icon-button ${isGroupComposerOpen ? "active" : ""}`} onClick={() => startGroupComposer()} title="New group" type="button">
+          <button
+            className={`icon-button ${isGroupComposerOpen || isVariantComposerOpen || isPageComposerOpen ? "active" : ""}`}
+            onClick={() => {
+              if (activeLibrary === "variants" || activeLibrary === "components") {
+                startVariantComposer();
+              } else if (activeLibrary === "pages") {
+                startPageComposer();
+              } else {
+                startGroupComposer();
+              }
+            }}
+            title={activeLibrary === "pages" ? "New page" : activeLibrary === "variants" || activeLibrary === "components" ? "New variant" : "New group"}
+            type="button"
+          >
             <Plus size={18} />
           </button>
           <StatusPill status={status} />
@@ -1495,19 +2343,34 @@ function App() {
       <section className="workspace">
         <aside className="sidebar" aria-label="Components">
           <div className="panel-heading">
-            {activeLibrary === "components" ? <Search size={17} /> : activeLibrary === "groups" ? <GalleryHorizontalEnd size={17} /> : <Database size={17} />}
-            <span>{activeLibrary === "components" ? "Components" : activeLibrary === "groups" ? "Groups" : "Sources"}</span>
+            {activeLibrary === "components" ? <Search size={17} /> : activeLibrary === "groups" || activeLibrary === "variants" || activeLibrary === "pages" ? <GalleryHorizontalEnd size={17} /> : <Database size={17} />}
+            <span>{libraryLabel(activeLibrary)}</span>
           </div>
           <div className="library-tabs" aria-label="Library mode">
             <button
               className={activeLibrary === "components" ? "active" : ""}
-              onClick={() => setActiveLibrary("components")}
+              onClick={() => {
+                setActiveLibrary("components");
+                setIsGroupBoardOpen(false);
+              }}
               type="button"
             >
               Components
             </button>
+            <button className={activeLibrary === "variants" ? "active" : ""} onClick={() => {
+              setActiveLibrary("variants");
+              setIsGroupBoardOpen(false);
+            }} type="button">
+              Variants
+            </button>
             <button className={activeLibrary === "groups" ? "active" : ""} onClick={() => setActiveLibrary("groups")} type="button">
               Groups
+            </button>
+            <button className={activeLibrary === "pages" ? "active" : ""} onClick={() => {
+              setActiveLibrary("pages");
+              setIsGroupBoardOpen(false);
+            }} type="button">
+              Pages
             </button>
             <button className={activeLibrary === "sources" ? "active" : ""} onClick={() => setActiveLibrary("sources")} type="button">
               Sources
@@ -1542,6 +2405,25 @@ function App() {
                     <em>{item.stateCount}</em>
                   </button>
                 ))
+            ) : activeLibrary === "variants" ? (
+              filteredVariants.map((item) => (
+                <button
+                  className={`component-row ${item.id === selectedVariantId ? "selected" : ""}`}
+                  key={item.id}
+                  onClick={() => {
+                    setSelectedVariantId(item.id);
+                    setIsGroupBoardOpen(false);
+                    setIsReportOpen(false);
+                  }}
+                  type="button"
+                >
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>{item.description}</small>
+                  </span>
+                  <em>{item.slotCount}</em>
+                </button>
+              ))
             ) : activeLibrary === "groups" ? (
               filteredGroups.map((item) => (
                   <button
@@ -1561,6 +2443,25 @@ function App() {
                     <em>{item.itemCount}</em>
                   </button>
                 ))
+            ) : activeLibrary === "pages" ? (
+              filteredPages.map((item) => (
+                <button
+                  className={`component-row ${item.id === selectedPageId ? "selected" : ""}`}
+                  key={item.id}
+                  onClick={() => {
+                    setSelectedPageId(item.id);
+                    setIsGroupBoardOpen(false);
+                    setIsReportOpen(false);
+                  }}
+                  type="button"
+                >
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>{item.description}</small>
+                  </span>
+                  <em>{item.blockCount}</em>
+                </button>
+              ))
             ) : (
               filteredSources.map((item) => (
                 <button
@@ -1582,7 +2483,9 @@ function App() {
               ))
             )}
             {!isLoading && activeLibrary === "components" && !filteredComponents.length && <p className="catalog-note">No matching components.</p>}
+            {!isLoading && activeLibrary === "variants" && !filteredVariants.length && <p className="catalog-note">No matching variants.</p>}
             {!isLoading && activeLibrary === "groups" && !filteredGroups.length && <p className="catalog-note">No matching groups.</p>}
+            {!isLoading && activeLibrary === "pages" && !filteredPages.length && <p className="catalog-note">No matching pages.</p>}
             {!isLoading && activeLibrary === "sources" && !filteredSources.length && <p className="catalog-note">No matching sources.</p>}
             {isLoading && <LoadingRows />}
           </div>
@@ -1609,6 +2512,7 @@ function App() {
                 groups={groups}
                 groupFiles={groupFiles}
                 componentFiles={componentFiles}
+                variantFiles={variantFiles}
                 highlightedGroupId={highlightedBoardGroupId}
                 showDuplicatesOnly={showDuplicateGroupsOnly}
                 onShowDuplicatesOnlyChange={setShowDuplicateGroupsOnly}
@@ -1632,13 +2536,37 @@ function App() {
                       </button>
                     </header>
                     <div className="compare-preview">
-                      <GroupPreview group={group} componentFiles={componentFiles} compact />
+                      <GroupPreview group={group} componentFiles={componentFiles} variantFiles={variantFiles} compact />
                     </div>
                   </section>
                 ))}
               </div>
             ) : activeLibrary === "groups" && group ? (
-              <GroupPreview group={group} componentFiles={componentFiles} />
+              <GroupPreview group={group} componentFiles={componentFiles} variantFiles={variantFiles} />
+            ) : activeLibrary === "variants" && variant && isComparingThemes ? (
+              <div className="theme-compare-grid">
+                {themeFiles.map((item) => (
+                  <section className="compare-tile" key={item.theme.id} style={themeStyle(item)}>
+                    <header>
+                      <span>{item.theme.name}</span>
+                      <button
+                        className={item.theme.id === selectedThemeId ? "mini-theme active" : "mini-theme"}
+                        onClick={() => setSelectedThemeId(item.theme.id)}
+                        type="button"
+                      >
+                        Use
+                      </button>
+                    </header>
+                    <div className="compare-preview">
+                      <VariantPreview variant={variant} componentFiles={componentFiles} compact />
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : activeLibrary === "variants" && variant ? (
+              <VariantPreview variant={variant} componentFiles={componentFiles} />
+            ) : activeLibrary === "pages" && pageRecord ? (
+              <PagePreview page={pageRecord} groupFiles={groupFiles} variantFiles={variantFiles} componentFiles={componentFiles} />
             ) : component && isComparingThemes ? (
               <div className="theme-compare-grid">
                 {themeFiles.map((item) => (
@@ -1704,6 +2632,20 @@ function App() {
                     {item.role}
                   </button>
                 ))
+              : activeLibrary === "variants" && variant
+              ? variant.slots.map((slot) => (
+                  <button className="state-chip" key={`${slot.name}-${slot.kind}`} type="button">
+                    <Circle size={12} />
+                    {slot.name}
+                  </button>
+                ))
+              : activeLibrary === "pages" && pageRecord
+              ? pageRecord.regions.map((region) => (
+                  <button className="state-chip" key={region.id} type="button">
+                    <Circle size={12} />
+                    {region.label}
+                  </button>
+                ))
               : component?.states.map((state) => (
                   <button
                     className={state.id === selectedStateId ? "state-chip active" : "state-chip"}
@@ -1723,9 +2665,41 @@ function App() {
             <Zap size={17} />
             <span>Props</span>
           </div>
-          {isGroupComposerOpen ? (
+          {isVariantComposerOpen ? (
+            <VariantComposer
+              componentFiles={componentFiles}
+              draft={variantDraft}
+              hasReviewedWarnings={hasReviewedDraftWarnings}
+              isEditing={Boolean(editingVariantId)}
+              message={saveMessage}
+              validation={draftVariantValidation}
+              onCancel={() => {
+                setIsVariantComposerOpen(false);
+                setEditingVariantId(null);
+              }}
+              onChange={setVariantDraft}
+              onSave={saveVariantDraft}
+            />
+          ) : isPageComposerOpen ? (
+            <PageComposer
+              draft={pageDraft}
+              groups={groups}
+              variants={variants}
+              hasReviewedWarnings={hasReviewedDraftWarnings}
+              isEditing={Boolean(editingPageId)}
+              message={saveMessage}
+              validation={draftPageValidation}
+              onCancel={() => {
+                setIsPageComposerOpen(false);
+                setEditingPageId(null);
+              }}
+              onChange={setPageDraft}
+              onSave={savePageDraft}
+            />
+          ) : isGroupComposerOpen ? (
             <GroupComposer
               componentFiles={componentFiles}
+              variants={variants}
               draft={groupDraft}
               hasReviewedWarnings={hasReviewedDraftWarnings}
               isEditing={Boolean(editingGroupId)}
@@ -1776,10 +2750,30 @@ function App() {
               duplicateGroups={duplicateGroups.filter((finding) => finding.groupIds.includes(group.group.id))}
               group={group}
               componentFiles={componentFiles}
+              variantFiles={variantFiles}
               validation={groupValidation}
               visualChecks={visualChecks}
               onCopy={() => startGroupComposer("copy")}
               onEdit={() => startGroupComposer("edit")}
+            />
+          ) : activeLibrary === "variants" && variant ? (
+            <VariantInspector
+              componentFiles={componentFiles}
+              variant={variant}
+              validation={variantValidation}
+              visualChecks={visualChecks}
+              onCopy={() => startVariantComposer("copy")}
+              onEdit={() => startVariantComposer("edit")}
+            />
+          ) : activeLibrary === "pages" && pageRecord ? (
+            <PageInspector
+              page={pageRecord}
+              groups={groups}
+              variants={variants}
+              validation={pageValidation}
+              visualChecks={visualChecks}
+              onCopy={() => startPageComposer("copy")}
+              onEdit={() => startPageComposer("edit")}
             />
           ) : (
             <div className="controls">
@@ -1838,6 +2832,70 @@ function addDraftNameConflict(
     issueCount: issues.length,
     issues,
   };
+}
+
+function addVariantDraftNameConflict(
+  validation: GroupValidation,
+  draft: VariantFile,
+  variants: VariantSummary[],
+  editingVariantId: string | null,
+): GroupValidation {
+  const draftId = slugify(draft.variant.name);
+  const conflict = draftId && variants.some((variant) => variant.id === draftId && variant.id !== editingVariantId);
+  if (!conflict) return validation;
+
+  const issues = [
+    ...validation.issues,
+    {
+      severity: "error" as const,
+      title: "Duplicate variant name",
+      detail: `${draft.variant.name} would use the same metadata id as an existing variant.`,
+    },
+  ];
+
+  return {
+    status: "error",
+    issueCount: issues.length,
+    issues,
+  };
+}
+
+function addPageDraftNameConflict(
+  validation: GroupValidation,
+  draft: PageFile,
+  pages: PageSummary[],
+  editingPageId: string | null,
+): GroupValidation {
+  const draftId = slugify(draft.page.name);
+  const conflict = draftId && pages.some((page) => page.id === draftId && page.id !== editingPageId);
+  if (!conflict) return validation;
+
+  const issues = [
+    ...validation.issues,
+    {
+      severity: "error" as const,
+      title: "Duplicate page name",
+      detail: `${draft.page.name} would use the same metadata id as an existing page.`,
+    },
+  ];
+
+  return {
+    status: "error",
+    issueCount: issues.length,
+    issues,
+  };
+}
+
+function libraryLabel(mode: LibraryMode) {
+  return mode === "components"
+    ? "Components"
+    : mode === "variants"
+    ? "Variants"
+    : mode === "groups"
+    ? "Groups"
+    : mode === "pages"
+    ? "Pages"
+    : "Sources";
 }
 
 function themeStyle(theme: ThemeFile) {
@@ -1911,6 +2969,7 @@ function GroupInspector({
   duplicateGroups,
   group,
   componentFiles,
+  variantFiles,
   validation,
   visualChecks,
   onCopy,
@@ -1919,6 +2978,7 @@ function GroupInspector({
   duplicateGroups: DuplicateGroupFinding[];
   group: GroupFile;
   componentFiles: Record<string, ComponentFile>;
+  variantFiles: Record<string, VariantFile>;
   validation: GroupValidation | null;
   visualChecks: VisualCheck[];
   onCopy: () => void;
@@ -1942,6 +3002,17 @@ function GroupInspector({
       <ValidationPanel validation={validation} />
       <VisualCheckPanel checks={visualChecks} />
       {group.items.map((item) => {
+        if (groupItemKind(item) === "variant") {
+          const variant = item.variant ? variantFiles[item.variant] : null;
+          return (
+            <section className="group-item-card" key={`variant-${item.variant}-${item.role}`}>
+              <span>{item.role}</span>
+              <strong>{variant?.variant.name ?? item.variant}</strong>
+              <small>variant</small>
+            </section>
+          );
+        }
+
         const component = componentFiles[item.component];
         const state = component?.states.find((candidate) => candidate.id === item.state);
 
@@ -1957,7 +3028,51 @@ function GroupInspector({
   );
 }
 
-function GroupComposer({
+function VariantInspector({
+  componentFiles,
+  variant,
+  validation,
+  visualChecks,
+  onCopy,
+  onEdit,
+}: {
+  componentFiles: Record<string, ComponentFile>;
+  variant: VariantFile;
+  validation: GroupValidation | null;
+  visualChecks: VisualCheck[];
+  onCopy: () => void;
+  onEdit: () => void;
+}) {
+  const component = componentFiles[variant.variant.component];
+
+  return (
+    <div className="controls">
+      <section className="group-summary">
+        <strong>{component?.component.name ?? variant.variant.component}</strong>
+        <p>{variant.variant.description}</p>
+        <button className="secondary-command" onClick={onEdit} type="button">
+          <Pencil size={15} />
+          Edit Variant
+        </button>
+        <button className="secondary-command" onClick={onCopy} type="button">
+          <Plus size={15} />
+          Copy to New Variant
+        </button>
+      </section>
+      <ValidationPanel validation={validation} />
+      <VisualCheckPanel checks={visualChecks} />
+      {variant.slots.map((slot) => (
+        <section className="group-item-card" key={`${slot.name}-${slot.kind}`}>
+          <span>{slot.kind}</span>
+          <strong>{slot.name}</strong>
+          <small>{slot.value}</small>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function VariantComposer({
   componentFiles,
   draft,
   hasReviewedWarnings,
@@ -1969,6 +3084,394 @@ function GroupComposer({
   onSave,
 }: {
   componentFiles: Record<string, ComponentFile>;
+  draft: VariantFile;
+  hasReviewedWarnings: boolean;
+  isEditing: boolean;
+  message: string | null;
+  validation: GroupValidation | null;
+  onCancel: () => void;
+  onChange: (draft: VariantFile) => void;
+  onSave: () => void;
+}) {
+  const componentOptions = Object.values(componentFiles);
+  const component = componentFiles[draft.variant.component];
+  const hasBlockingIssues = validation?.status === "error";
+  const needsWarningReview = validation?.status === "warning" && !hasReviewedWarnings;
+  const saveLabel = needsWarningReview ? "Review Warnings" : isEditing ? "Update Variant" : "Save Variant";
+
+  function updateVariant(updates: Partial<VariantFile["variant"]>) {
+    const next = { ...draft, variant: { ...draft.variant, ...updates } };
+    if (updates.component) {
+      const selected = componentFiles[updates.component];
+      next.variant.state = selected?.states[0]?.id ?? "";
+      next.source.path = `metadata/components/${updates.component}.toml`;
+      next.props = { ...(selected ? defaultProps(selected) : {}) };
+    }
+    if (updates.state && component) {
+      const state = component.states.find((candidate) => candidate.id === updates.state);
+      next.props = { ...defaultProps(component), ...(state?.props ?? {}) };
+    }
+    onChange(next);
+  }
+
+  function updateProp(id: string, value: string) {
+    onChange({ ...draft, props: { ...draft.props, [id]: value } });
+  }
+
+  function updateSlot(index: number, updates: Partial<VariantSlot>) {
+    onChange({
+      ...draft,
+      slots: draft.slots.map((slot, slotIndex) => (slotIndex === index ? { ...slot, ...updates } : slot)),
+    });
+  }
+
+  function addSlot() {
+    onChange({ ...draft, slots: [...draft.slots, { name: "slot", kind: "text", value: "New content" }] });
+  }
+
+  function removeSlot(index: number) {
+    onChange({ ...draft, slots: draft.slots.filter((_, slotIndex) => slotIndex !== index) });
+  }
+
+  return (
+    <div className="composer-panel">
+      <label className="field-control">
+        <span>Name</span>
+        <input onChange={(event) => updateVariant({ name: event.currentTarget.value })} type="text" value={draft.variant.name} />
+      </label>
+      <label className="field-control">
+        <span>Description</span>
+        <input onChange={(event) => updateVariant({ description: event.currentTarget.value })} type="text" value={draft.variant.description} />
+      </label>
+      <label className="field-control">
+        <span>Component</span>
+        <select onChange={(event) => updateVariant({ component: event.currentTarget.value })} value={draft.variant.component}>
+          {componentOptions.map((option) => (
+            <option key={option.component.id} value={option.component.id}>
+              {option.component.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field-control">
+        <span>State</span>
+        <select onChange={(event) => updateVariant({ state: event.currentTarget.value })} value={draft.variant.state}>
+          {component?.states.map((state) => (
+            <option key={state.id} value={state.id}>
+              {state.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {component?.props.map((prop) => (
+        <PropControl key={prop.id} prop={prop} value={draft.props[prop.id] ?? prop.default} onChange={(value) => updateProp(prop.id, value)} />
+      ))}
+
+      <div className="composer-items">
+        {draft.slots.map((slot, index) => (
+          <section className="composer-item" key={`${index}-${slot.name}-${slot.kind}`}>
+            <label className="field-control">
+              <span>Slot</span>
+              <input onChange={(event) => updateSlot(index, { name: event.currentTarget.value })} type="text" value={slot.name} />
+            </label>
+            <label className="field-control">
+              <span>Kind</span>
+              <select onChange={(event) => updateSlot(index, { kind: event.currentTarget.value })} value={slot.kind}>
+                {variantSlotKinds.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-control">
+              <span>Value</span>
+              <input onChange={(event) => updateSlot(index, { value: event.currentTarget.value })} type="text" value={slot.value} />
+            </label>
+            <button className="secondary-command" disabled={draft.slots.length <= 1} onClick={() => removeSlot(index)} type="button">
+              Remove
+            </button>
+          </section>
+        ))}
+      </div>
+
+      <ValidationPanel validation={validation} />
+      <WarningReviewPanel hasReviewedWarnings={hasReviewedWarnings} validation={validation} />
+
+      <div className="composer-actions">
+        <button className="secondary-command" onClick={addSlot} type="button">
+          Add Slot
+        </button>
+        <button className="secondary-command" onClick={onCancel} type="button">
+          Cancel
+        </button>
+        <button className="primary-command" disabled={hasBlockingIssues} onClick={onSave} type="button">
+          {saveLabel}
+        </button>
+      </div>
+      {message && <p className={message.includes("Resolve") || message.includes("already exists") ? "catalog-error" : "catalog-note"}>{message}</p>}
+    </div>
+  );
+}
+
+function PageInspector({
+  page,
+  groups,
+  variants,
+  validation,
+  visualChecks,
+  onCopy,
+  onEdit,
+}: {
+  page: PageFile;
+  groups: GroupSummary[];
+  variants: VariantSummary[];
+  validation: GroupValidation | null;
+  visualChecks: VisualCheck[];
+  onCopy: () => void;
+  onEdit: () => void;
+}) {
+  const blockCount = page.regions.reduce((total, region) => total + region.blocks.length, 0);
+
+  return (
+    <div className="controls">
+      <section className="group-summary">
+        <strong>{blockCount} blocks</strong>
+        <p>{page.page.description}</p>
+        <button className="secondary-command" onClick={onEdit} type="button">
+          <Pencil size={15} />
+          Edit Page
+        </button>
+        <button className="secondary-command" onClick={onCopy} type="button">
+          <Plus size={15} />
+          Copy to New Page
+        </button>
+      </section>
+      <ValidationPanel validation={validation} />
+      <VisualCheckPanel checks={visualChecks} />
+      <section className="group-summary">
+        <strong>Export Plan</strong>
+        <p>Export will generate React page files, referenced group/variant files, and a manifest for handoff to WebStorm.</p>
+      </section>
+      {page.regions.map((region) => (
+        <section className="group-item-card" key={region.id}>
+          <span>{region.layout}</span>
+          <strong>{region.label}</strong>
+          <small>
+            {region.blocks
+              .map((block) =>
+                block.kind === "group"
+                  ? groups.find((group) => group.id === block.reference)?.name ?? block.reference
+                  : variants.find((variant) => variant.id === block.reference)?.name ?? block.reference,
+              )
+              .join(", ")}
+          </small>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function PageComposer({
+  draft,
+  groups,
+  variants,
+  hasReviewedWarnings,
+  isEditing,
+  message,
+  validation,
+  onCancel,
+  onChange,
+  onSave,
+}: {
+  draft: PageFile;
+  groups: GroupSummary[];
+  variants: VariantSummary[];
+  hasReviewedWarnings: boolean;
+  isEditing: boolean;
+  message: string | null;
+  validation: GroupValidation | null;
+  onCancel: () => void;
+  onChange: (draft: PageFile) => void;
+  onSave: () => void;
+}) {
+  const hasBlockingIssues = validation?.status === "error";
+  const needsWarningReview = validation?.status === "warning" && !hasReviewedWarnings;
+  const saveLabel = needsWarningReview ? "Review Warnings" : isEditing ? "Update Page" : "Save Page";
+
+  function updatePage(updates: Partial<PageFile["page"]>) {
+    onChange({ ...draft, page: { ...draft.page, ...updates } });
+  }
+
+  function updateRegion(index: number, updates: Partial<PageRegion>) {
+    onChange({ ...draft, regions: draft.regions.map((region, regionIndex) => (regionIndex === index ? { ...region, ...updates } : region)) });
+  }
+
+  function updateBlock(regionIndex: number, blockIndex: number, updates: Partial<PageBlock>) {
+    onChange({
+      ...draft,
+      regions: draft.regions.map((region, currentRegionIndex) => {
+        if (currentRegionIndex !== regionIndex) return region;
+        return {
+          ...region,
+          blocks: region.blocks.map((block, currentBlockIndex) => {
+            if (currentBlockIndex !== blockIndex) return block;
+            const next = { ...block, ...updates };
+            if (updates.kind === "group") next.reference = groups[0]?.id ?? "";
+            if (updates.kind === "variant") next.reference = variants[0]?.id ?? "";
+            return next;
+          }),
+        };
+      }),
+    });
+  }
+
+  function moveBlock(regionIndex: number, blockIndex: number, direction: -1 | 1) {
+    const region = draft.regions[regionIndex];
+    if (!region) return;
+    onChange(reorderPageBlock(draft, region.id, blockIndex, direction));
+  }
+
+  function moveBlockToRegion(regionIndex: number, blockIndex: number, targetRegionId: string) {
+    const sourceRegion = draft.regions[regionIndex];
+    if (!sourceRegion) return;
+    onChange(movePageBlockToRegion(draft, sourceRegion.id, blockIndex, targetRegionId));
+  }
+
+  function addBlock(regionIndex: number) {
+    const region = draft.regions[regionIndex];
+    if (!region) return;
+    updateRegion(regionIndex, {
+      blocks: [
+        ...region.blocks,
+        {
+          kind: groups.length ? "group" : "variant",
+          reference: groups[0]?.id ?? variants[0]?.id ?? "",
+          role: "Page block",
+          layout: "section",
+        },
+      ],
+    });
+  }
+
+  function removeBlock(regionIndex: number, blockIndex: number) {
+    const region = draft.regions[regionIndex];
+    if (!region) return;
+    updateRegion(regionIndex, { blocks: region.blocks.filter((_, index) => index !== blockIndex) });
+  }
+
+  return (
+    <div className="composer-panel">
+      <label className="field-control">
+        <span>Name</span>
+        <input onChange={(event) => updatePage({ name: event.currentTarget.value })} type="text" value={draft.page.name} />
+      </label>
+      <label className="field-control">
+        <span>Description</span>
+        <input onChange={(event) => updatePage({ description: event.currentTarget.value })} type="text" value={draft.page.description} />
+      </label>
+      <label className="field-control">
+        <span>Route</span>
+        <input onChange={(event) => updatePage({ route: event.currentTarget.value })} type="text" value={draft.page.route} />
+      </label>
+
+      <div className="composer-items">
+        {draft.regions.map((region, regionIndex) => (
+          <section className="composer-item page-region-editor" key={region.id}>
+            <label className="field-control">
+              <span>{region.label} Layout</span>
+              <select onChange={(event) => updateRegion(regionIndex, { layout: event.currentTarget.value as PageLayout })} value={region.layout}>
+                {pageLayouts.map((layout) => (
+                  <option key={layout} value={layout}>
+                    {layout}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {region.blocks.map((block, blockIndex) => (
+              <section className="composer-item nested" key={`${region.id}-${blockIndex}-${block.reference}`}>
+                <label className="field-control">
+                  <span>Role</span>
+                  <input onChange={(event) => updateBlock(regionIndex, blockIndex, { role: event.currentTarget.value })} type="text" value={block.role} />
+                </label>
+                <label className="field-control">
+                  <span>Kind</span>
+                  <select onChange={(event) => updateBlock(regionIndex, blockIndex, { kind: event.currentTarget.value as PageBlock["kind"] })} value={block.kind}>
+                    <option value="group">group</option>
+                    <option value="variant">variant</option>
+                  </select>
+                </label>
+                <label className="field-control">
+                  <span>Reference</span>
+                  <select onChange={(event) => updateBlock(regionIndex, blockIndex, { reference: event.currentTarget.value })} value={block.reference}>
+                    {(block.kind === "group" ? groups : variants).map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-control">
+                  <span>Move To</span>
+                  <select onChange={(event) => moveBlockToRegion(regionIndex, blockIndex, event.currentTarget.value)} value={region.id}>
+                    {draft.regions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="composer-item-actions">
+                  <button className="icon-command" disabled={blockIndex === 0} onClick={() => moveBlock(regionIndex, blockIndex, -1)} title="Move up" type="button">
+                    <ArrowUp size={15} />
+                  </button>
+                  <button className="icon-command" disabled={blockIndex === region.blocks.length - 1} onClick={() => moveBlock(regionIndex, blockIndex, 1)} title="Move down" type="button">
+                    <ArrowDown size={15} />
+                  </button>
+                  <button className="secondary-command" disabled={region.blocks.length <= 1} onClick={() => removeBlock(regionIndex, blockIndex)} type="button">
+                    Remove
+                  </button>
+                </div>
+              </section>
+            ))}
+            <button className="secondary-command" onClick={() => addBlock(regionIndex)} type="button">
+              Add Block
+            </button>
+          </section>
+        ))}
+      </div>
+
+      <ValidationPanel validation={validation} />
+      <WarningReviewPanel hasReviewedWarnings={hasReviewedWarnings} validation={validation} />
+
+      <div className="composer-actions">
+        <button className="secondary-command" onClick={onCancel} type="button">
+          Cancel
+        </button>
+        <button className="primary-command" disabled={hasBlockingIssues} onClick={onSave} type="button">
+          {saveLabel}
+        </button>
+      </div>
+      {message && <p className={message.includes("Resolve") || message.includes("already exists") ? "catalog-error" : "catalog-note"}>{message}</p>}
+    </div>
+  );
+}
+
+function GroupComposer({
+  componentFiles,
+  variants,
+  draft,
+  hasReviewedWarnings,
+  isEditing,
+  message,
+  validation,
+  onCancel,
+  onChange,
+  onSave,
+}: {
+  componentFiles: Record<string, ComponentFile>;
+  variants: VariantSummary[];
   draft: GroupFile;
   hasReviewedWarnings: boolean;
   isEditing: boolean;
@@ -1979,6 +3482,7 @@ function GroupComposer({
   onSave: () => void;
 }) {
   const componentOptions = Object.values(componentFiles);
+  const variantOptions = variants;
   const hasBlockingIssues = validation?.status === "error";
   const needsWarningReview = validation?.status === "warning" && !hasReviewedWarnings;
   const saveLabel = needsWarningReview ? "Review Warnings" : isEditing ? "Update Group" : "Save Group";
@@ -1998,6 +3502,17 @@ function GroupComposer({
           const component = componentFiles[updates.component];
           next.state = component?.states[0]?.id ?? "";
         }
+        if (updates.kind === "variant") {
+          next.variant = next.variant || variantOptions[0]?.id || "";
+          next.component = "";
+          next.state = "";
+        }
+        if (updates.kind === "component") {
+          const component = componentOptions[0];
+          next.component = next.component || component?.component.id || "";
+          next.state = next.state || component?.states[0]?.id || "";
+          next.variant = "";
+        }
         return next;
       }),
     });
@@ -2012,8 +3527,10 @@ function GroupComposer({
       items: [
         ...draft.items,
         {
+          kind: "component",
           component: component.component.id,
           state: component.states[0]?.id ?? "",
+          variant: "",
           role: "Area Item",
         },
       ],
@@ -2079,6 +3596,26 @@ function GroupComposer({
                 <input onChange={(event) => updateItem(index, { role: event.currentTarget.value })} type="text" value={item.role} />
               </label>
               <label className="field-control">
+                <span>Kind</span>
+                <select onChange={(event) => updateItem(index, { kind: event.currentTarget.value as GroupItem["kind"] })} value={groupItemKind(item)}>
+                  <option value="component">component</option>
+                  <option value="variant">variant</option>
+                </select>
+              </label>
+              {groupItemKind(item) === "variant" ? (
+                <label className="field-control">
+                  <span>Variant</span>
+                  <select onChange={(event) => updateItem(index, { variant: event.currentTarget.value })} value={item.variant ?? variantOptions[0]?.id ?? ""}>
+                    {variantOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <>
+              <label className="field-control">
                 <span>Component</span>
                 <select onChange={(event) => updateItem(index, { component: event.currentTarget.value })} value={item.component}>
                   {componentOptions.map((option) => (
@@ -2098,6 +3635,8 @@ function GroupComposer({
                   ))}
                 </select>
               </label>
+                </>
+              )}
               <div className="composer-item-actions">
                 <button className="icon-command" disabled={index === 0} onClick={() => moveItem(index, -1)} title="Move up" type="button">
                   <ArrowUp size={15} />
@@ -2196,12 +3735,20 @@ function buildVisualChecks({
   component,
   group,
   groupValidation,
+  variant,
+  variantValidation,
+  page,
+  pageValidation,
   props,
   theme,
 }: {
   component: ComponentFile | null;
   group: GroupFile | null;
   groupValidation: GroupValidation | null;
+  variant: VariantFile | null;
+  variantValidation: GroupValidation | null;
+  page: PageFile | null;
+  pageValidation: GroupValidation | null;
   props: Record<string, string>;
   theme: ThemeFile | null;
 }): VisualCheck[] {
@@ -2218,7 +3765,7 @@ function buildVisualChecks({
     if (component.component.id === "button") {
       const variant = props.variant ?? "primary";
       const background = theme.colors[variant === "danger" ? "danger" : variant === "secondary" ? "secondary" : "primary"];
-      checks.push(contrastCheck("Button text contrast", "#ffffff", background, 4.5));
+      checks.push(contrastCheck("Button text contrast", "#071018", background, 4.5));
 
       if ((props.size ?? "medium") === "small") {
         checks.push({
@@ -2246,6 +3793,39 @@ function buildVisualChecks({
     }
 
     groupValidation?.issues.forEach((issue) => {
+      checks.push({
+        status: issue.severity,
+        title: issue.title,
+        detail: issue.detail,
+      });
+    });
+  }
+
+  if (variant) {
+    checks.push({
+      status: variant.slots.length ? "ready" : "warning",
+      title: "Variant slots",
+      detail: `${variant.slots.length} structured ${variant.slots.length === 1 ? "slot" : "slots"} configured for this reusable item.`,
+    });
+
+    variantValidation?.issues.forEach((issue) => {
+      checks.push({
+        status: issue.severity,
+        title: issue.title,
+        detail: issue.detail,
+      });
+    });
+  }
+
+  if (page) {
+    const blockCount = page.regions.reduce((total, region) => total + region.blocks.length, 0);
+    checks.push({
+      status: blockCount ? "ready" : "error",
+      title: "Page blocks",
+      detail: `${blockCount} arranged ${blockCount === 1 ? "block" : "blocks"} across ${page.regions.length} semantic regions.`,
+    });
+
+    pageValidation?.issues.forEach((issue) => {
       checks.push({
         status: issue.severity,
         title: issue.title,
@@ -2567,7 +4147,9 @@ function CatalogPanel({
         <select disabled={!indexReady} onChange={(event) => onTypeChange(event.currentTarget.value)} value={type}>
           <option value="all">all</option>
           <option value="component">components</option>
+          <option value="variant">variants</option>
           <option value="group">groups</option>
+          <option value="page">pages</option>
           <option value="theme">themes</option>
           <option value="source">sources</option>
           <option value="shadcn-component">shadcn components</option>
@@ -3223,15 +4805,35 @@ function PreviewRenderer({ component, props }: { component: string; props: Recor
 function GroupPreview({
   group,
   componentFiles,
+  variantFiles,
   compact = false,
 }: {
   group: GroupFile;
   componentFiles: Record<string, ComponentFile>;
+  variantFiles: Record<string, VariantFile>;
   compact?: boolean;
 }) {
   return (
     <section className={`group-preview ${group.group.layout} ${compact ? "compact" : ""}`}>
       {group.items.map((item) => {
+        if (groupItemKind(item) === "variant") {
+          const variant = item.variant ? variantFiles[item.variant] : null;
+
+          return (
+            <article className="group-preview-item" key={`variant-${item.variant}-${item.role}`}>
+              <header>
+                <span>{item.role}</span>
+                <strong>{variant?.variant.name ?? item.variant}</strong>
+              </header>
+              {variant ? (
+                <VariantPreview variant={variant} componentFiles={componentFiles} compact />
+              ) : (
+                <Loader2 className="spin" size={20} />
+              )}
+            </article>
+          );
+        }
+
         const component = componentFiles[item.component];
         const state = component?.states.find((candidate) => candidate.id === item.state);
         const props = state ? { ...defaultProps(component), ...state.props } : {};
@@ -3254,11 +4856,115 @@ function GroupPreview({
   );
 }
 
+function VariantPreview({
+  variant,
+  componentFiles,
+  compact = false,
+}: {
+  variant: VariantFile;
+  componentFiles: Record<string, ComponentFile>;
+  compact?: boolean;
+}) {
+  const component = componentFiles[variant.variant.component];
+  const state = component?.states.find((candidate) => candidate.id === variant.variant.state);
+  const props = { ...(component ? defaultProps(component) : {}), ...(state?.props ?? {}), ...variant.props };
+  const slots = Object.fromEntries(variant.slots.map((slot) => [slot.name, slot]));
+
+  if (variant.variant.component === "card") {
+    return (
+      <article className={`variant-card ${compact ? "compact" : ""}`}>
+        {slots.media && <div className="variant-card-media">{slots.media.value}</div>}
+        <div className="variant-card-body">
+          <header>
+            {slots.badge && <span className="sample-badge info soft">{slots.badge.value}</span>}
+            <h3>{slots.header?.value ?? props.title ?? variant.variant.name}</h3>
+          </header>
+          {slots.divider && <span className="variant-divider" />}
+          <p>{slots.body?.value ?? variant.variant.description}</p>
+          {slots.metadata && <small>{slots.metadata.value}</small>}
+          {slots.action && <button type="button">{slots.action.value}</button>}
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <section className={`variant-preview ${compact ? "compact" : ""}`}>
+      <header>
+        <span>{variant.variant.component}:{variant.variant.state}</span>
+        <strong>{variant.variant.name}</strong>
+      </header>
+      {component ? <PreviewRenderer component={component.component.id} props={props} /> : <Loader2 className="spin" size={20} />}
+      {variant.slots.length > 0 && (
+        <div className="variant-slots">
+          {variant.slots.map((slot) => (
+            <span key={`${slot.name}-${slot.kind}`}>
+              {slot.name}: {slot.value}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PagePreview({
+  page,
+  groupFiles,
+  variantFiles,
+  componentFiles,
+}: {
+  page: PageFile;
+  groupFiles: Record<string, GroupFile>;
+  variantFiles: Record<string, VariantFile>;
+  componentFiles: Record<string, ComponentFile>;
+}) {
+  return (
+    <section className="page-preview">
+      <header className="page-preview-title">
+        <span>{page.page.route}</span>
+        <h3>{page.page.name}</h3>
+      </header>
+      {page.regions.map((region) => (
+        <section className={`page-region ${region.layout}`} key={region.id}>
+          <header>
+            <span>{region.label}</span>
+            <small>{region.layout}</small>
+          </header>
+          <div className="page-region-blocks">
+            {region.blocks.map((block) => {
+              const key = `${region.id}-${block.kind}-${block.reference}-${block.role}`;
+              if (block.kind === "variant") {
+                const variant = variantFiles[block.reference];
+                return (
+                  <article className={`page-block ${block.layout}`} key={key}>
+                    <span>{block.role}</span>
+                    {variant ? <VariantPreview variant={variant} componentFiles={componentFiles} compact /> : <p>{block.reference} missing</p>}
+                  </article>
+                );
+              }
+
+              const group = groupFiles[block.reference];
+              return (
+                <article className={`page-block ${block.layout}`} key={key}>
+                  <span>{block.role}</span>
+                  {group ? <GroupPreview group={group} componentFiles={componentFiles} variantFiles={variantFiles} compact /> : <p>{block.reference} missing</p>}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </section>
+  );
+}
+
 function GroupBoard({
   duplicateGroups,
   groups,
   groupFiles,
   componentFiles,
+  variantFiles,
   highlightedGroupId,
   showDuplicatesOnly,
   onShowDuplicatesOnlyChange,
@@ -3268,6 +4974,7 @@ function GroupBoard({
   groups: GroupSummary[];
   groupFiles: Record<string, GroupFile>;
   componentFiles: Record<string, ComponentFile>;
+  variantFiles: Record<string, VariantFile>;
   highlightedGroupId: string | null;
   showDuplicatesOnly: boolean;
   onShowDuplicatesOnlyChange: (showDuplicatesOnly: boolean) => void;
@@ -3314,7 +5021,7 @@ function GroupBoard({
             </header>
             <p>{summary.description}</p>
             {group ? (
-              <GroupPreview group={group} componentFiles={componentFiles} compact />
+              <GroupPreview group={group} componentFiles={componentFiles} variantFiles={variantFiles} compact />
             ) : (
               <Loader2 className="spin" size={22} />
             )}

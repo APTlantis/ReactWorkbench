@@ -12,7 +12,7 @@ title = "Theme Preview"
 kind = "project"
 class = "project"
 status = "release-prep"
-description = "Local-first Tauri desktop laboratory for deterministic UI component, theme-token, reusable component-group, source-adapter, and future page-builder previews."
+description = "Local-first Tauri desktop laboratory for deterministic UI component, theme-token, saved variant, reusable component-group, source-adapter, and page-builder previews."
 tags = [
     "desktop-app",
     "tauri",
@@ -123,7 +123,7 @@ known_gaps = [
     "Signing is not configured; current signing posture is unsigned until proven otherwise.",
     "Git status requires non-global safe.directory handling because of local ownership metadata.",
     "D:\\Development.manifest.toml is referenced by root instructions but was absent during onboarding; this project does not create it.",
-    "Local source records, local shadcn registry/directory indexing, explicit shadcn item import as metadata placeholders, and local source-file materialization exist; public GitHub shadcn import, adapter-backed live previews, prop inference, and page-builder foundations are not implemented yet.",
+    "Local source records, local shadcn registry/directory indexing, explicit shadcn item import as metadata placeholders, local source-file materialization, saved variants, variant-backed groups, and block-based page metadata exist; public GitHub shadcn import, adapter-backed live previews, richer prop inference, and React export generation are not implemented yet.",
 ]
 technical_debt = "moderate"
 
@@ -139,7 +139,9 @@ required_files = [
 required_child_project_files = []
 source_of_truth = [
     "metadata\\components",
+    "metadata\\variants",
     "metadata\\groups",
+    "metadata\\pages",
     "metadata\\themes",
 ]
 derived_outputs = [
@@ -211,6 +213,7 @@ primary_concepts = [
     "component groups",
     "source adapters",
     "shadcn import",
+    "saved variants",
     "page builder foundation",
     "visual verification",
     "screenshot comparison",
@@ -225,7 +228,7 @@ related_domains = [
 complexity = "moderate"
 
 [visual]
-theme = "metadata-defined light, dark, and aurora themes"
+theme = "metadata-defined Blue Slate default with light, dark, and aurora comparison themes"
 primary_color = "theme-dependent"
 semantic_role = "component preview, source-adapter, and future page-builder laboratory"
 contains_svg_assets = true

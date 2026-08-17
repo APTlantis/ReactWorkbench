@@ -8,6 +8,8 @@ The app currently understands three metadata types:
 - themes
 - groups
 - sources
+- variants
+- pages
 
 DuckDB is only a derived catalog. If there is a disagreement, the TOML files win.
 
@@ -64,8 +66,7 @@ A group defines:
 
 Each item references:
 
-- a component id
-- a named state from that component
+- either a component id plus named state, or a saved variant id
 - a role label explaining what that item does in the area
 
 Example:
@@ -92,6 +93,15 @@ role = "Context"
 component = "button"
 state = "danger-loading"
 role = "Destructive Action"
+```
+
+Variant-backed group items use the same item list but declare their kind:
+
+```toml
+[[items]]
+kind = "variant"
+variant = "project-feature-card"
+role = "Feature Card"
 ```
 
 ### Duplicate Structures
@@ -159,3 +169,27 @@ imports/shadcn/<source-id>/
 ```
 
 The import rejects absolute paths and `..` path traversal. It does not execute the copied TSX component or infer full prop controls yet.
+
+## Variants
+
+Variant files live in:
+
+```text
+metadata/variants
+```
+
+A variant is a saved component recipe. It references a base component and state, stores prop overrides, and can define structured slots such as `media`, `header`, `badge`, `divider`, `body`, `metadata`, and `action`.
+
+Variants are edited with form controls, not a freeform canvas. They are intended to become reusable site objects that groups and pages can consume.
+
+## Pages
+
+Page files live in:
+
+```text
+metadata/pages
+```
+
+A page is an explicit block layout record. It contains semantic regions such as `header`, `main`, and `footer`; each region has ordered blocks that reference saved groups or variants.
+
+The first page editor supports constrained block arrangement: reorder blocks inside a region or move them between semantic regions. It does not store absolute x/y coordinates, freeform canvas positions, or arbitrary imported page edits.

@@ -1,0 +1,58 @@
+[variant]
+id = "project-feature-card"
+name = "Project Feature Card"
+description = "A reusable card recipe with left media, right copy, divider, metadata, and an action."
+component = "card"
+state = "comfortable-summary"
+themes = ["blue-slate", "light", "dark", "aurora"]
+
+[framework]
+react = true
+svelte = false
+
+[source]
+adapter = "local-toml"
+id = "local-toml"
+path = "metadata/components/card.toml"
+
+[props]
+density = "comfortable"
+tone = "neutral"
+showFooter = "true"
+title = "React composition workbench"
+metric = "94"
+
+[[slots]]
+name = "media"
+kind = "media"
+value = "Workbench preview"
+
+[[slots]]
+name = "header"
+kind = "text"
+value = "React composition workbench"
+
+[[slots]]
+name = "badge"
+kind = "badge"
+value = "Variant"
+
+[[slots]]
+name = "divider"
+kind = "divider"
+value = "enabled"
+
+[[slots]]
+name = "body"
+kind = "text"
+value = "A saved card variant that can be reused in groups and pages."
+
+[[slots]]
+name = "metadata"
+kind = "metadata"
+value = "React first; Svelte later"
+
+[[slots]]
+name = "action"
+kind = "action"
+value = "Open workbench"

@@ -1,0 +1,31 @@
+[theme]
+id = "blue-slate"
+name = "Blue Slate"
+description = "Default dark workbench theme with slate surfaces and restrained cyan, teal, amber, and indigo accents."
+
+[colors]
+background = "#0b1118"
+surface = "#111a24"
+surfaceMuted = "#182536"
+text = "#edf5ff"
+muted = "#9fb0c3"
+border = "#2b3b4f"
+primary = "#78d5f6"
+secondary = "#b8c8dc"
+danger = "#ff8f8a"
+success = "#71d6a1"
+warning = "#f2c978"
+focus = "#9ab7ff"
+
+[spacing]
+unit = 8
+density = "comfortable"
+
+[radius]
+small = 6
+medium = 8
+large = 12
+
+[typography]
+font = "Inter, Segoe UI, sans-serif"
+scale = 1.0

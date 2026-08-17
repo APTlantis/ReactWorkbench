@@ -1,6 +1,8 @@
 export type DuplicateGroupItem = {
+  kind?: string;
   component: string;
   state: string;
+  variant?: string;
 };
 
 export type DuplicateGroupFile = {
@@ -71,7 +73,7 @@ export function findDuplicateGroups(groupFiles: Record<string, DuplicateGroupFil
 }
 
 export function groupStructureSignature(group: DuplicateGroupFile) {
-  const items = group.items.map((item) => `${item.component}:${item.state}`).join("|");
+  const items = group.items.map((item) => (item.kind === "variant" ? `variant:${item.variant ?? ""}` : `${item.component}:${item.state}`)).join("|");
   return `${group.group.layout}|${items}`;
 }
 

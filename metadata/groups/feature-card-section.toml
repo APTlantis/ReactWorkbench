@@ -1,0 +1,11 @@
+[group]
+id = "feature-card-section"
+name = "Feature Card Section"
+description = "A group that consumes a saved component variant instead of a raw component state."
+layout = "stack"
+themes = ["blue-slate", "light", "dark", "aurora"]
+
+[[items]]
+kind = "variant"
+variant = "project-feature-card"
+role = "Feature Card"

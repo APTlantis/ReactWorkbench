@@ -1,203 +1,62 @@
-# Theme Preview
+# React UI Workbench Variant-To-Page Plan
 
-Theme Preview is a Tauri 2 desktop laboratory for inspecting UI components, theme tokens, and reusable component groups from explicit TOML metadata. It is also the foundation for a local-first UI builder that can work with imported component systems.
+![Stage](https://img.shields.io/badge/stage-release--prep-blue)
+![Version](https://img.shields.io/badge/version-0.1.0-informational)
+![Standard: DRS](https://img.shields.io/badge/standard-DRS-purple)
+![Tauri](https://img.shields.io/badge/Tauri-v2-24C8D8?logo=tauri&logoColor=white)
+![React](https://img.shields.io/badge/React-v19-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-v5.8-3178C6?logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-v7-646CFF?logo=vite&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust&logoColor=white)
 
-It is intentionally deterministic. The current app is a place to define components, states, themes, and named UI areas, then inspect how those definitions behave alone, together, and across themes. The longer-term product direction is to add source adapters, starting with shadcn-compatible imports, then build pages from selected local and imported components.
+## Summary
 
-## What It Does
+Evolve the app from a component/group preview lab into a React composition workbench with this rule:
 
-- Loads component metadata from `metadata/components`.
-- Loads theme token sets from `metadata/themes`.
-- Loads named component groups from `metadata/groups`.
-- Previews component states for buttons, cards, badges, inputs, toggles, tabs, and table controls.
-- Switches themes and compares theme token values.
-- Shows a board of saved groups and an inspector for the selected group.
-- Lets you compose, edit, validate, and save groups inside the app.
-- Supports group layouts such as `row`, `grid`, `stack`, `toolbar`, `form-row`, `dialog-footer`, and `table-header`.
-- Surfaces duplicate saved group structures in board cards, the group inspector, and duplicate-only board filtering.
-- Keeps duplicate fixtures covered with real metadata, including `settings-row.toml` and `settings-review-row.toml`.
-- Runs deterministic checks for visible copy, contrast, empty groups, unresolved references, clipping, tiny controls, and screenshot report review-source behavior.
-- Exports browser-rendered preview screenshots for every component and group across every theme.
-- Compares screenshot exports against metadata-hash snapshots and writes JSON, HTML, and Markdown reports.
-- Tracks local review decisions for changed screenshots and supports strict comparison checks for release-style verification.
-- Builds a local DuckDB catalog when DuckDB is available, with search over components, groups, and themes.
-- Reads source records from `metadata/sources`.
-- Indexes a local shadcn-style registry or component directory through the first shadcn adapter slice.
-- Shows source catalogs beside local components and groups.
-- Imports selected shadcn catalog items as local metadata components with source provenance and copied local source files.
+**Components are configured. Groups are composed. Pages are arranged.**
 
-The TOML files are the current source of truth. Source records describe imported or external catalogs. DuckDB, adapter catalogs, screenshots, reports, and smoke artifacts are derived outputs.
+The first slice is **variant-first**: add saved component variants as first-class reusable metadata, make groups consume variants, then add block-based page assembly from variants/groups. Blue Slate becomes the default theme, while existing themes remain available for comparison.
 
-## Quick Start
+## Key Changes
 
-Install dependencies:
+- Add `metadata/variants/` as the new reusable object layer between components and groups.
+  - A variant references a base component, selected state/props, optional named slots, source provenance, themes, and React/Svelte framework targets.
+  - Initial slot support should be structured and form-driven: text, media, badge, divider, footer/action, and metadata rows for card-like variants.
+  - Save/copy/edit flows should mirror the existing group composer pattern: explicit save, validation panel, warning review, slugified file ids.
 
-```powershell
-npm install
-```
+- Update group composition to allow items to reference either a component state or a saved variant.
+  - Keep existing group metadata valid.
+  - Add a new item shape that can represent `kind = "component"` or `kind = "variant"` without breaking old `component/state/role` files.
+  - Group editing remains form-driven with layout presets, item ordering buttons, duplicate/copy/edit support, and deterministic validation.
 
-Run the desktop app:
+- Add `metadata/pages/` after variants are usable.
+  - A page record contains regions such as `header`, `main`, and `footer`, and ordered blocks within each region.
+  - Blocks reference saved groups or variants, plus layout mode such as `stack`, `grid`, `split`, `sidebar`, or `section`.
+  - Page editing uses block reorder/drop-zone behavior only: move sections between semantic regions and reorder them. No absolute positioning, freeform canvas, or pixel-level resize handles.
 
-```powershell
-npm run tauri dev
-```
+- Add Blue Slate as the default theme.
+  - Import it as a theme metadata file and set it as the initial selected theme.
+  - Preserve existing `light`, `dark`, and `aurora` themes as comparison targets unless later intentionally retired.
+  - Update docs to clarify that Blue Slate is the default project theme, not a release-readiness claim.
 
-Run the Vite web preview instead:
+- Add export planning after page metadata exists.
+  - First export target is predictable React output from saved metadata: variant component files, group/section files, page files, and a manifest.
+  - Export is a handoff to WebStorm, not an import/edit loop for arbitrary existing pages.
 
-```powershell
-npm run dev
-```
+## Interfaces And Metadata
 
-Build the frontend:
+- Rust/Tauri commands:
+  - `list_variants`, `load_variant`, `save_variant`, `update_variant`, `validate_variant`
+  - `list_pages`, `load_page`, `save_page`, `update_page`, `validate_page`
+  - Extend local index records to include variants and pages.
 
-```powershell
-npm run build
-```
+- Frontend types:
+  - `VariantFile`, `VariantSummary`, `VariantSlot`, `VariantValidation`
+  - `PageFile`, `PageSummary`, `PageRegion`, `PageBlock`, `PageValidation`
+  - Extend catalog/search result types with `variant` and `page`.
 
-Build the desktop executable and installers:
-
-```powershell
-npm run tauri build
-```
-
-The built Windows executable is written under:
-
-```text
-src-tauri/target/release/theme-preview.exe
-```
-
-## Verification
-
-The main local verification command is:
-
-```powershell
-npm run verify
-```
-
-It runs the frontend build, screenshot comparison tests, duplicate group tests, report review tests, strict screenshot comparison, Rust/Tauri tests, a temporary Vite preview server, and the browser smoke check. The final output includes a checklist summary, duplicate smoke coverage, and visual smoke totals.
-
-Focused checks are also available:
-
-```powershell
-npm run test:compare
-npm run test:groups
-npm run test:reports
-npm run compare:screenshots:strict
-```
-
-To run the browser smoke check directly, start a preview server first, then run:
-
-```powershell
-npm run smoke
-```
-
-Smoke artifacts are written to:
-
-```text
-artifacts/smoke
-```
-
-## Screenshots And Reports
-
-Export screenshots for every component and group preview across every theme:
-
-```powershell
-npm run screenshots
-```
-
-Screenshot exports are written to `artifacts/previews/latest`, organized by theme. Each run records a deterministic TOML metadata fingerprint and copies the export to:
-
-```text
-artifacts/previews/snapshots/<metadata-hash>
-```
-
-Compare the latest export against its matching metadata snapshot, or against a specific baseline snapshot id:
-
-```powershell
-npm run compare:screenshots
-npm run compare:screenshots -- 69b0c577a9be
-npm run compare:screenshots:strict
-```
-
-Comparison reports are written to:
-
-```text
-artifacts/previews/reports
-```
-
-Each comparison can produce:
-
-- JSON for machine-readable results.
-- HTML for interactive review.
-- Markdown for pull request summaries.
-- `.diff.png` images for changed previews.
-- Optional `.review.json` decisions for accepted or dismissed visual changes.
-
-Strict comparison fails when added, removed, or changed previews still need review. Accepted blocking items pass when the matching review decision file is present; dismissed or unresolved items continue to fail.
-
-Tiny rendering drift can be tolerated with:
-
-```powershell
-$env:PIXEL_DIFF_THRESHOLD = "0.001"
-npm run compare:screenshots
-```
-
-Small per-pixel color shifts can be ignored before counting changed pixels:
-
-```powershell
-$env:PIXEL_COLOR_THRESHOLD = "3"
-npm run compare:screenshots
-```
-
-## Metadata Model
-
-Project metadata lives under:
-
-```text
-metadata/
-  components/   Component props and named states
-  groups/       Named UI areas made from component states
-  sources/      Component catalog source records
-  themes/       Theme token sets
-```
-
-Components define identity, supported props, named states, supported themes, and framework targets. Themes define token values for color, spacing, radii, and typography. Groups reference component states by id and arrange them into named UI areas.
-
-The adapter model extends this without replacing it: local TOML is the first adapter, shadcn import is the first external adapter target, and later libraries should normalize into the same catalog shape before they can participate in previews or page building.
-
-The current shadcn adapter slice can index a local shadcn-style registry with a root `registry.json`, or scan `components/ui/*.tsx` when no registry file is present. Indexed entries keep provenance and preview status. A selected shadcn item can be materialized into `metadata/components` as a local metadata placeholder with an imported preview state, and its referenced source files are copied under `imports/shadcn/<source-id>/`. The app does not execute the copied TSX as a live preview yet.
-
-Duplicate group detection is based on a structural signature: group layout plus the ordered `component:state` item sequence. Names, descriptions, roles, and theme lists do not affect duplicate matching. See [Duplicate Structures](docs/METADATA.md#duplicate-structures) for the authoring rule.
-
-The seeded `metadata/groups/settings-row.toml` and `metadata/groups/settings-review-row.toml` files intentionally share this signature:
-
-```text
-row|badge:soft-info|card:compact-warning|button:secondary-disabled
-```
-
-That pair exists as fixture data for duplicate badges, duplicate-only board filtering, similar-group inspector copy, jump targets, and verification output.
-
-## Project Shape
-
-```text
-docs/           Concept, metadata guide, and roadmap
-examples/       Local adapter fixtures, including a shadcn-style registry
-metadata/       Source TOML for components, groups, and themes
-scripts/        Screenshot, comparison, smoke, report, and verification scripts
-src/            React + TypeScript frontend
-src-tauri/      Rust/Tauri desktop shell and commands
-artifacts/      Generated smoke, screenshot, and comparison outputs
-```
-
-## Useful Docs
-
-- [Theme Preview Brief](Theme-Preview.md): product direction and operating model.
-- [Concept](docs/CONCEPT.md): why this app exists.
-- [Metadata Guide](docs/METADATA.md): how components, themes, and groups are described.
-- [Roadmap](docs/ROADMAP.md): what is working and what is next.
-
-## Design Philosophy
-
-The human decides what belongs together. The app removes the repetitive work of checking whether those pieces still look right across states, themes, layouts, and saved combinations.
-
-That keeps the system inspectable. Later page building, search, or AI-assisted workflows can help navigate and assemble larger catalogs, but the underlying definitions should stay portable, local, and predictable.
+- UI navigation:
+  - Add library modes for `Variants` and `Pages`.
+  - Keep `Components`, `Groups`, and `Sources`.
+  - Add a Variant Workshop inspector for form/slot editing.
+  - Add a Page Layout view with semantic regions and block reorder controls.

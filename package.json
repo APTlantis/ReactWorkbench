@@ -13,6 +13,7 @@
     "compare:screenshots:strict": "node scripts/compare-previews.mjs --strict",
     "test:compare": "node --test scripts/compare-previews.test.mjs",
     "test:groups": "node --experimental-strip-types --test scripts/group-duplicates.test.ts",
+    "test:pages": "node --experimental-strip-types --test scripts/page-layout.test.ts",
     "test:reports": "node --experimental-strip-types --test scripts/report-review.test.ts",
     "verify": "node scripts/verify-preview.mjs",
     "tauri": "tauri"

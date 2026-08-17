@@ -17,7 +17,7 @@ function slugify(value) {
 }
 
 async function selectLibraryItem(page, library, name) {
-  await page.getByRole("button", { name: library }).click();
+  await page.getByRole("button", { name: library, exact: true }).click();
   await page.locator(".component-row", { hasText: name }).first().click();
   await page.waitForFunction((expectedName) => document.querySelector(".preview-header h2")?.textContent?.trim() === expectedName, name);
   await page.waitForTimeout(120);
@@ -106,8 +106,16 @@ async function main() {
       .locator(".component-row strong")
       .evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()).filter(Boolean));
 
-    await page.getByRole("button", { name: "Groups" }).click();
+    await page.getByRole("button", { name: "Groups", exact: true }).click();
     const groupNames = await page
+      .locator(".component-row strong")
+      .evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()).filter(Boolean));
+    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    const variantNames = await page
+      .locator(".component-row strong")
+      .evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()).filter(Boolean));
+    await page.getByRole("button", { name: "Pages", exact: true }).click();
+    const pageNames = await page
       .locator(".component-row strong")
       .evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim()).filter(Boolean));
 
@@ -117,7 +125,9 @@ async function main() {
         id: theme.id,
         name: theme.name,
         components: [],
+        variants: [],
         groups: [],
+        pages: [],
       };
 
       for (const name of componentNames) {
@@ -130,6 +140,16 @@ async function main() {
         themeManifest.groups.push({ name, ...(await capturePreview(page, theme.id, "groups", name)) });
       }
 
+      for (const name of variantNames) {
+        await selectLibraryItem(page, "Variants", name);
+        themeManifest.variants.push({ name, ...(await capturePreview(page, theme.id, "variants", name)) });
+      }
+
+      for (const name of pageNames) {
+        await selectLibraryItem(page, "Pages", name);
+        themeManifest.pages.push({ name, ...(await capturePreview(page, theme.id, "pages", name)) });
+      }
+
       manifest.themes.push(themeManifest);
     }
 
@@ -138,8 +158,10 @@ async function main() {
     await cp(outputDir, snapshotDir, { recursive: true });
     const componentCount = manifest.themes.reduce((total, theme) => total + theme.components.length, 0);
     const groupCount = manifest.themes.reduce((total, theme) => total + theme.groups.length, 0);
+    const variantCount = manifest.themes.reduce((total, theme) => total + theme.variants.length, 0);
+    const pageCount = manifest.themes.reduce((total, theme) => total + theme.pages.length, 0);
     console.log(
-      `Exported ${componentCount} component previews and ${groupCount} group previews across ${manifest.themes.length} themes to ${outputDir}`,
+      `Exported ${componentCount} component previews, ${variantCount} variant previews, ${groupCount} group previews, and ${pageCount} page previews across ${manifest.themes.length} themes to ${outputDir}`,
     );
     console.log(`Snapshot ${metadata.snapshotId} is available at ${snapshotDir}`);
   } finally {

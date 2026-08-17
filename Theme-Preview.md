@@ -1,6 +1,8 @@
 # Theme Preview Brief
 
-Theme Preview is a desktop component exploration studio growing into a local-first UI builder. It helps a user define or import UI components, named states, theme tokens, reusable component groups, and eventually pages, then inspect the resulting previews in a predictable app.
+Theme Preview is a desktop component exploration studio growing into a local-first UI builder. It helps a user define or import UI components, named states, theme tokens, saved variants, reusable component groups, and pages, then inspect the resulting previews in a predictable app.
+
+The current builder rule is: components are configured, groups are composed, and pages are arranged. Component variants are the reusable layer between stock components and page sections.
 
 The project is built around one practical idea: UI systems become easier to trust when their source components, important combinations, and pages are explicit, renderable, and checkable.
 
@@ -29,8 +31,11 @@ The app currently includes:
 - local TOML metadata for components, groups, and themes
 - component previews for buttons, cards, badges, inputs, and toggles
 - component previews for tabs and table controls
+- saved component variants with structured slots
 - theme switching, theme comparison, and token inspection
 - saved group previews and a full group board
+- variant-backed group items
+- saved page metadata and block-based page previews
 - in-app group composing, editing, validation, and warning review
 - richer group layouts, including toolbar, form row, dialog footer, and table header
 - duplicate group structure detection across saved groups
@@ -53,9 +58,9 @@ Theme Preview should become a builder that can work with multiple component sour
 
 The first adapter target is shadcn because its registry model gives the project a practical import shape: source records can point at a local directory or public GitHub registry, index available components, preserve provenance, and expose imported components beside the current local metadata.
 
-Page building should come after adapter-backed component selection is reliable. Saved pages should be explicit metadata, not hidden generated output.
+Page building is now represented by explicit metadata records, not hidden generated output. The first page editor is block-based: it arranges saved groups and variants inside semantic regions, without absolute positioning or arbitrary imported page editing.
 
-The current metadata set includes components, themes, and groups under `metadata/`. The generated outputs live under `artifacts/`.
+The current metadata set includes components, variants, groups, pages, sources, and themes under `metadata/`. The generated outputs live under `artifacts/`.
 
 ## Core Workflow
 
@@ -72,7 +77,8 @@ The main workflow is deliberately simple:
 9. Export screenshots when a stable visual snapshot is needed.
 10. Compare new screenshots against a metadata-matched baseline.
 11. Record review decisions for intentional visual changes.
-12. Later, compose saved pages from selected components and groups.
+12. Compose saved pages from selected groups and variants.
+13. Later, export predictable React files and manifests as a handoff to WebStorm.
 
 This keeps the work grounded in explicit source files and source records instead of one-off manual preview setups.
 

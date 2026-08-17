@@ -2714,11 +2714,12 @@ mod tests {
             .join("themes");
         let themes: Vec<ThemeFile> = read_all_toml(&dir).expect("themes should parse");
 
-        assert_eq!(themes.len(), 3);
+        assert_eq!(themes.len(), 4);
         assert!(themes.iter().all(|theme| theme.spacing.unit > 0));
         assert!(themes
             .iter()
             .all(|theme| !theme.colors.surface_muted.is_empty()));
+        assert!(themes.iter().any(|theme| theme.theme.id == "blue-slate"));
     }
 
     #[test]
@@ -2729,15 +2730,53 @@ mod tests {
             .join("groups");
         let groups: Vec<GroupFile> = read_all_toml(&dir).expect("groups should parse");
 
-        assert_eq!(groups.len(), 11);
+        assert_eq!(groups.len(), 12);
         assert!(groups
             .iter()
             .any(|group| group.group.id == "catalog-tabs"));
         assert!(groups
             .iter()
             .any(|group| group.group.id == "table-controls"));
+        assert!(groups
+            .iter()
+            .any(|group| group.group.id == "feature-card-section"));
         assert!(groups.iter().all(|group| !group.items.is_empty()));
         assert!(groups.iter().all(|group| !group.group.layout.is_empty()));
+    }
+
+    #[test]
+    fn seeded_variant_metadata_parses() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("metadata")
+            .join("variants");
+        let variants: Vec<VariantFile> = read_all_toml(&dir).expect("variants should parse");
+
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0].variant.id, "project-feature-card");
+        assert_eq!(variants[0].variant.component, "card");
+        assert!(variants[0].framework.react);
+        assert!(variants[0].slots.iter().any(|slot| slot.kind == "action"));
+    }
+
+    #[test]
+    fn seeded_page_metadata_parses() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("metadata")
+            .join("pages");
+        let pages: Vec<PageFile> = read_all_toml(&dir).expect("pages should parse");
+
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].page.id, "workbench-home");
+        assert_eq!(pages[0].page.theme, "blue-slate");
+        assert_eq!(pages[0].regions.len(), 3);
+        assert!(pages[0].regions.iter().any(|region| {
+            region
+                .blocks
+                .iter()
+                .any(|block| block.kind == "variant" && block.reference == "project-feature-card")
+        }));
     }
 
     #[test]
@@ -2867,13 +2906,17 @@ mod tests {
             },
             items: vec![
                 GroupItem {
+                    kind: String::new(),
                     component: "button".to_string(),
                     state: "missing".to_string(),
+                    variant: String::new(),
                     role: "Action".to_string(),
                 },
                 GroupItem {
+                    kind: String::new(),
                     component: "unknown".to_string(),
                     state: "primary".to_string(),
+                    variant: String::new(),
                     role: "Action".to_string(),
                 },
             ],
