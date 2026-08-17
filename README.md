@@ -1,4 +1,4 @@
-# React UI Workbench Variant-To-Page Plan
+# Theme Preview
 
 ![Stage](https://img.shields.io/badge/stage-release--prep-blue)
 ![Version](https://img.shields.io/badge/version-0.1.0-informational)
@@ -9,54 +9,119 @@
 ![Vite](https://img.shields.io/badge/Vite-v7-646CFF?logo=vite&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust&logoColor=white)
 
-## Summary
-
-Evolve the app from a component/group preview lab into a React composition workbench with this rule:
+Theme Preview is a local-first Tauri desktop workbench for React UI composition. It started as a deterministic component and theme preview lab, and is now growing into a builder shaped around this rule:
 
 **Components are configured. Groups are composed. Pages are arranged.**
 
-The first slice is **variant-first**: add saved component variants as first-class reusable metadata, make groups consume variants, then add block-based page assembly from variants/groups. Blue Slate becomes the default theme, while existing themes remain available for comparison.
+The app uses explicit TOML metadata as its source of truth so components, saved variants, groups, page layouts, themes, and source records stay inspectable and reproducible.
 
-## Key Changes
+## What It Does
 
-- Add `metadata/variants/` as the new reusable object layer between components and groups.
-  - A variant references a base component, selected state/props, optional named slots, source provenance, themes, and React/Svelte framework targets.
-  - Initial slot support should be structured and form-driven: text, media, badge, divider, footer/action, and metadata rows for card-like variants.
-  - Save/copy/edit flows should mirror the existing group composer pattern: explicit save, validation panel, warning review, slugified file ids.
+- Loads component metadata from `metadata/components`.
+- Saves reusable component variants under `metadata/variants`.
+- Loads named component groups from `metadata/groups`.
+- Lets groups reference either component states or saved variants.
+- Loads block-based pages from `metadata/pages`.
+- Arranges page blocks inside semantic regions such as header, main, and footer.
+- Loads source records from `metadata/sources`.
+- Loads theme token sets from `metadata/themes`.
+- Uses Blue Slate as the default theme, with `light`, `dark`, and `aurora` still available for comparison.
+- Previews component states, variants, groups, and pages in the app.
+- Provides structured form editors for variants and groups.
+- Provides constrained block movement for pages, without absolute positioning or freeform canvas editing.
+- Exports and compares browser-rendered preview screenshots.
+- Runs deterministic checks for rendering, contrast, clipping, text overflow, duplicate groups, and screenshot review state.
 
-- Update group composition to allow items to reference either a component state or a saved variant.
-  - Keep existing group metadata valid.
-  - Add a new item shape that can represent `kind = "component"` or `kind = "variant"` without breaking old `component/state/role` files.
-  - Group editing remains form-driven with layout presets, item ordering buttons, duplicate/copy/edit support, and deterministic validation.
+The current export target is planned React handoff output from saved metadata. The app is not intended to import arbitrary existing pages and visually edit them after export.
 
-- Add `metadata/pages/` after variants are usable.
-  - A page record contains regions such as `header`, `main`, and `footer`, and ordered blocks within each region.
-  - Blocks reference saved groups or variants, plus layout mode such as `stack`, `grid`, `split`, `sidebar`, or `section`.
-  - Page editing uses block reorder/drop-zone behavior only: move sections between semantic regions and reorder them. No absolute positioning, freeform canvas, or pixel-level resize handles.
+## Quick Start
 
-- Add Blue Slate as the default theme.
-  - Import it as a theme metadata file and set it as the initial selected theme.
-  - Preserve existing `light`, `dark`, and `aurora` themes as comparison targets unless later intentionally retired.
-  - Update docs to clarify that Blue Slate is the default project theme, not a release-readiness claim.
+Install dependencies:
 
-- Add export planning after page metadata exists.
-  - First export target is predictable React output from saved metadata: variant component files, group/section files, page files, and a manifest.
-  - Export is a handoff to WebStorm, not an import/edit loop for arbitrary existing pages.
+```powershell
+npm install
+```
 
-## Interfaces And Metadata
+Run the browser preview:
 
-- Rust/Tauri commands:
-  - `list_variants`, `load_variant`, `save_variant`, `update_variant`, `validate_variant`
-  - `list_pages`, `load_page`, `save_page`, `update_page`, `validate_page`
-  - Extend local index records to include variants and pages.
+```powershell
+npm run dev
+```
 
-- Frontend types:
-  - `VariantFile`, `VariantSummary`, `VariantSlot`, `VariantValidation`
-  - `PageFile`, `PageSummary`, `PageRegion`, `PageBlock`, `PageValidation`
-  - Extend catalog/search result types with `variant` and `page`.
+Run the desktop app:
 
-- UI navigation:
-  - Add library modes for `Variants` and `Pages`.
-  - Keep `Components`, `Groups`, and `Sources`.
-  - Add a Variant Workshop inspector for form/slot editing.
-  - Add a Page Layout view with semantic regions and block reorder controls.
+```powershell
+npm run tauri dev
+```
+
+Build the frontend:
+
+```powershell
+npm run build
+```
+
+Run the full local verification loop:
+
+```powershell
+npm run verify
+```
+
+Build desktop packages:
+
+```powershell
+npm run tauri build
+```
+
+## Metadata Model
+
+```text
+metadata/
+  components/   Stock component definitions, props, and states
+  variants/     Saved component recipes with prop overrides and structured slots
+  groups/       Reusable UI areas made from component states or variants
+  pages/        Block-based page layouts made from groups and variants
+  sources/      Local and imported component catalog source records
+  themes/       Theme token sets, including the default Blue Slate theme
+```
+
+Variants sit between components and groups. For example, a stock `Card` can become `Project Feature Card` with media, header, badge, divider, body, metadata, and action slots.
+
+Pages sit above groups. A page record arranges saved groups and variants into ordered blocks inside semantic regions. Page editing uses block reorder and move-to-region controls; it does not store pixel positions.
+
+## Verification
+
+Useful focused checks:
+
+```powershell
+npm run test:compare
+npm run test:groups
+npm run test:pages
+npm run test:reports
+npm run compare:screenshots:strict
+```
+
+Browser smoke requires Playwright Chromium to launch successfully:
+
+```powershell
+npm run smoke
+```
+
+In this Codex sandbox, Playwright browser launch can fail with `spawn EPERM`; running the smoke command outside the sandbox is the expected workaround.
+
+## Release Status
+
+Lifecycle: `release-prep`.
+
+`npm run verify` is the main local verification command, but a passing local verification run is not a DRS release claim. Release readiness still requires final artifact paths, sizes, SHA-256 hashes, install, launch, uninstall, docs inclusion, and signing status to be verified and recorded.
+
+Existing MSI, NSIS, executable, `dist`, screenshot, and smoke outputs are preserved artifacts. They are not certified release artifacts until the DRS release gate is completed.
+
+## Useful Docs
+
+- [Project README](Project-README.md)
+- [Theme Preview Brief](Theme-Preview.md)
+- [Metadata Guide](docs/METADATA.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Project Proposal](docs/Project-Proposal.md)
+- [Release Checklist](docs/Theme-Preview%20-%20Release%20Checklist.md)
+- [Dependency Provenance](docs/Theme-Preview%20-%20Dependency%20Provenance.md)
