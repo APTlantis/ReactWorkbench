@@ -73,9 +73,94 @@ struct GroupInfo {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct GroupItem {
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    component: String,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    variant: String,
+    role: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct VariantFile {
+    variant: VariantInfo,
+    framework: FrameworkTargets,
+    source: VariantSource,
+    #[serde(default)]
+    props: BTreeMap<String, String>,
+    #[serde(default)]
+    slots: Vec<VariantSlot>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct VariantInfo {
+    id: String,
+    name: String,
+    description: String,
     component: String,
     state: String,
+    themes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct VariantSource {
+    #[serde(default)]
+    adapter: String,
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    path: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct VariantSlot {
+    name: String,
+    kind: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PageFile {
+    page: PageInfo,
+    regions: Vec<PageRegion>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PageInfo {
+    id: String,
+    name: String,
+    description: String,
+    theme: String,
+    route: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PageRegion {
+    id: String,
+    label: String,
+    layout: String,
+    #[serde(default)]
+    blocks: Vec<PageBlock>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PageBlock {
+    kind: String,
+    reference: String,
     role: String,
+    #[serde(default)]
+    layout: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -178,6 +263,27 @@ struct GroupSummary {
     description: String,
     layout: String,
     item_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VariantSummary {
+    id: String,
+    name: String,
+    description: String,
+    component: String,
+    state: String,
+    slot_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PageSummary {
+    id: String,
+    name: String,
+    description: String,
+    theme: String,
+    block_count: usize,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -451,6 +557,8 @@ const SUPPORTED_GROUP_LAYOUTS: &[&str] = &[
     "table-header",
 ];
 
+const SUPPORTED_PAGE_LAYOUTS: &[&str] = &["stack", "grid", "split", "sidebar", "section"];
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IndexSearchResult {
@@ -502,6 +610,53 @@ fn load_group(app: AppHandle, group_id: String) -> Result<GroupFile, String> {
     let path = metadata_dir(&app)
         .join("groups")
         .join(format!("{group_id}.toml"));
+    read_toml(&path)
+}
+
+#[tauri::command]
+fn list_variants(app: AppHandle) -> Result<Vec<VariantSummary>, String> {
+    let variants = read_all_variants(&app)?;
+    Ok(variants
+        .into_iter()
+        .map(|variant| VariantSummary {
+            id: variant.variant.id,
+            name: variant.variant.name,
+            description: variant.variant.description,
+            component: variant.variant.component,
+            state: variant.variant.state,
+            slot_count: variant.slots.len(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn load_variant(app: AppHandle, variant_id: String) -> Result<VariantFile, String> {
+    let path = metadata_dir(&app)
+        .join("variants")
+        .join(format!("{variant_id}.toml"));
+    read_toml(&path)
+}
+
+#[tauri::command]
+fn list_pages(app: AppHandle) -> Result<Vec<PageSummary>, String> {
+    let pages = read_all_pages(&app)?;
+    Ok(pages
+        .into_iter()
+        .map(|page| PageSummary {
+            id: page.page.id,
+            name: page.page.name,
+            description: page.page.description,
+            theme: page.page.theme,
+            block_count: page.regions.iter().map(|region| region.blocks.len()).sum(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn load_page(app: AppHandle, page_id: String) -> Result<PageFile, String> {
+    let path = metadata_dir(&app)
+        .join("pages")
+        .join(format!("{page_id}.toml"));
     read_toml(&path)
 }
 
@@ -662,6 +817,178 @@ fn write_group_file(
 #[tauri::command]
 fn validate_group(app: AppHandle, group: GroupFile) -> Result<GroupValidation, String> {
     validate_group_file(&app, &group)
+}
+
+#[tauri::command]
+fn save_variant(app: AppHandle, variant: VariantFile) -> Result<VariantFile, String> {
+    write_variant_file(&app, variant, None)
+}
+
+#[tauri::command]
+fn update_variant(
+    app: AppHandle,
+    original_variant_id: String,
+    variant: VariantFile,
+) -> Result<VariantFile, String> {
+    if original_variant_id != slugify(&original_variant_id) {
+        return Err("Original variant id is not a valid metadata id.".to_string());
+    }
+
+    write_variant_file(&app, variant, Some(original_variant_id))
+}
+
+fn write_variant_file(
+    app: &AppHandle,
+    variant: VariantFile,
+    original_variant_id: Option<String>,
+) -> Result<VariantFile, String> {
+    let mut variant = variant;
+    variant.variant.id = slugify(&variant.variant.name);
+    if variant.variant.id.is_empty() {
+        return Err("Variant name must contain at least one letter or number.".to_string());
+    }
+    let validation = validate_variant_file(app, &variant)?;
+    if validation
+        .issues
+        .iter()
+        .any(|issue| issue.severity == "error")
+    {
+        let details = validation
+            .issues
+            .iter()
+            .filter(|issue| issue.severity == "error")
+            .map(|issue| issue.title.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!("Variant has blocking validation issues: {details}"));
+    }
+
+    let dir = writable_metadata_dir(app).join("variants");
+    fs::create_dir_all(&dir).map_err(|error| {
+        format!(
+            "Could not create variant metadata directory {}: {error}",
+            dir.display()
+        )
+    })?;
+    let path = dir.join(format!("{}.toml", variant.variant.id));
+
+    if original_variant_id.as_deref() != Some(variant.variant.id.as_str()) && path.exists() {
+        return Err(format!(
+            "A variant named {} already exists. Choose a different name before saving.",
+            variant.variant.name
+        ));
+    }
+
+    let toml = toml::to_string_pretty(&variant)
+        .map_err(|error| format!("Could not serialize variant metadata: {error}"))?;
+    fs::write(&path, toml)
+        .map_err(|error| format!("Could not save variant metadata {}: {error}", path.display()))?;
+
+    if let Some(original_variant_id) = original_variant_id {
+        let original_path = dir.join(format!("{original_variant_id}.toml"));
+        if original_path != path && original_path.exists() {
+            fs::remove_file(&original_path).map_err(|error| {
+                format!(
+                    "Saved {}, but could not remove renamed variant file {}: {error}",
+                    variant.variant.name,
+                    original_path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(variant)
+}
+
+#[tauri::command]
+fn validate_variant(app: AppHandle, variant: VariantFile) -> Result<GroupValidation, String> {
+    validate_variant_file(&app, &variant)
+}
+
+#[tauri::command]
+fn save_page(app: AppHandle, page: PageFile) -> Result<PageFile, String> {
+    write_page_file(&app, page, None)
+}
+
+#[tauri::command]
+fn update_page(
+    app: AppHandle,
+    original_page_id: String,
+    page: PageFile,
+) -> Result<PageFile, String> {
+    if original_page_id != slugify(&original_page_id) {
+        return Err("Original page id is not a valid metadata id.".to_string());
+    }
+
+    write_page_file(&app, page, Some(original_page_id))
+}
+
+fn write_page_file(
+    app: &AppHandle,
+    page: PageFile,
+    original_page_id: Option<String>,
+) -> Result<PageFile, String> {
+    let mut page = page;
+    page.page.id = slugify(&page.page.name);
+    if page.page.id.is_empty() {
+        return Err("Page name must contain at least one letter or number.".to_string());
+    }
+    let validation = validate_page_file(app, &page)?;
+    if validation
+        .issues
+        .iter()
+        .any(|issue| issue.severity == "error")
+    {
+        let details = validation
+            .issues
+            .iter()
+            .filter(|issue| issue.severity == "error")
+            .map(|issue| issue.title.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!("Page has blocking validation issues: {details}"));
+    }
+
+    let dir = writable_metadata_dir(app).join("pages");
+    fs::create_dir_all(&dir).map_err(|error| {
+        format!(
+            "Could not create page metadata directory {}: {error}",
+            dir.display()
+        )
+    })?;
+    let path = dir.join(format!("{}.toml", page.page.id));
+
+    if original_page_id.as_deref() != Some(page.page.id.as_str()) && path.exists() {
+        return Err(format!(
+            "A page named {} already exists. Choose a different name before saving.",
+            page.page.name
+        ));
+    }
+
+    let toml = toml::to_string_pretty(&page)
+        .map_err(|error| format!("Could not serialize page metadata: {error}"))?;
+    fs::write(&path, toml)
+        .map_err(|error| format!("Could not save page metadata {}: {error}", path.display()))?;
+
+    if let Some(original_page_id) = original_page_id {
+        let original_path = dir.join(format!("{original_page_id}.toml"));
+        if original_path != path && original_path.exists() {
+            fs::remove_file(&original_path).map_err(|error| {
+                format!(
+                    "Saved {}, but could not remove renamed page file {}: {error}",
+                    page.page.name,
+                    original_path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(page)
+}
+
+#[tauri::command]
+fn validate_page(app: AppHandle, page: PageFile) -> Result<GroupValidation, String> {
+    validate_page_file(&app, &page)
 }
 
 #[tauri::command]
@@ -1148,17 +1475,34 @@ fn screenshot_report_status(summary: &ScreenshotReportCounts) -> (String, String
 
 fn validate_group_file(app: &AppHandle, group: &GroupFile) -> Result<GroupValidation, String> {
     let components = read_all_components(app)?;
-    Ok(validate_group_against_components(group, &components))
+    let variants = read_all_variants(app)?;
+    Ok(validate_group_against_components_and_variants(
+        group,
+        &components,
+        &variants,
+    ))
 }
 
 fn validate_group_against_components(
     group: &GroupFile,
     components: &[ComponentFile],
 ) -> GroupValidation {
+    validate_group_against_components_and_variants(group, components, &[])
+}
+
+fn validate_group_against_components_and_variants(
+    group: &GroupFile,
+    components: &[ComponentFile],
+    variants: &[VariantFile],
+) -> GroupValidation {
     let mut issues = Vec::new();
     let component_map = components
         .iter()
         .map(|component| (component.component.id.as_str(), component))
+        .collect::<BTreeMap<_, _>>();
+    let variant_map = variants
+        .iter()
+        .map(|variant| (variant.variant.id.as_str(), variant))
         .collect::<BTreeMap<_, _>>();
 
     if !SUPPORTED_GROUP_LAYOUTS.contains(&group.group.layout.as_str()) {
@@ -1183,13 +1527,14 @@ fn validate_group_against_components(
 
     let mut roles = BTreeSet::new();
     for item in &group.items {
+        let item_kind = group_item_kind(item);
         if item.role.trim().is_empty() {
             issues.push(GroupValidationIssue {
                 severity: "warning".to_string(),
                 title: "Missing role label".to_string(),
                 detail: format!(
-                    "{}:{} does not describe what it does in the area.",
-                    item.component, item.state
+                    "{} does not describe what it does in the area.",
+                    group_item_reference(item)
                 ),
             });
         } else if !roles.insert(item.role.to_lowercase()) {
@@ -1198,6 +1543,32 @@ fn validate_group_against_components(
                 title: "Duplicate role".to_string(),
                 detail: format!("{} appears more than once in this group.", item.role),
             });
+        }
+
+        if item_kind == "variant" {
+            if item.variant.trim().is_empty() {
+                issues.push(GroupValidationIssue {
+                    severity: "error".to_string(),
+                    title: "Missing variant reference".to_string(),
+                    detail: "Variant-backed group items must name a saved variant.".to_string(),
+                });
+            } else if !variant_map.contains_key(item.variant.as_str()) {
+                issues.push(GroupValidationIssue {
+                    severity: "error".to_string(),
+                    title: "Missing variant".to_string(),
+                    detail: format!("{} is not defined in metadata/variants.", item.variant),
+                });
+            }
+            continue;
+        }
+
+        if item_kind != "component" {
+            issues.push(GroupValidationIssue {
+                severity: "error".to_string(),
+                title: "Unsupported item kind".to_string(),
+                detail: format!("{} is not component or variant.", item.kind),
+            });
+            continue;
         }
 
         let Some(component) = component_map.get(item.component.as_str()) else {
@@ -1230,6 +1601,187 @@ fn validate_group_against_components(
         status: status.to_string(),
         issue_count: issues.len(),
         issues,
+    }
+}
+
+fn validate_variant_file(app: &AppHandle, variant: &VariantFile) -> Result<GroupValidation, String> {
+    let components = read_all_components(app)?;
+    Ok(validate_variant_against_components(variant, &components))
+}
+
+fn validate_variant_against_components(
+    variant: &VariantFile,
+    components: &[ComponentFile],
+) -> GroupValidation {
+    let mut issues = Vec::new();
+    let component = components
+        .iter()
+        .find(|component| component.component.id == variant.variant.component);
+
+    if variant.variant.name.trim().is_empty() {
+        issues.push(GroupValidationIssue {
+            severity: "error".to_string(),
+            title: "Missing variant name".to_string(),
+            detail: "A saved variant needs a reusable name.".to_string(),
+        });
+    }
+
+    match component {
+        Some(component) => {
+            if !component.states.iter().any(|state| state.id == variant.variant.state) {
+                issues.push(GroupValidationIssue {
+                    severity: "error".to_string(),
+                    title: "Missing base state".to_string(),
+                    detail: format!(
+                        "{} does not define state {}.",
+                        variant.variant.component, variant.variant.state
+                    ),
+                });
+            }
+        }
+        None => issues.push(GroupValidationIssue {
+            severity: "error".to_string(),
+            title: "Missing base component".to_string(),
+            detail: format!(
+                "{} is not defined in metadata/components.",
+                variant.variant.component
+            ),
+        }),
+    }
+
+    for slot in &variant.slots {
+        if slot.name.trim().is_empty() {
+            issues.push(GroupValidationIssue {
+                severity: "warning".to_string(),
+                title: "Unnamed slot".to_string(),
+                detail: "Variant slots should name the content area they configure.".to_string(),
+            });
+        }
+
+        if slot.kind.trim().is_empty() {
+            issues.push(GroupValidationIssue {
+                severity: "warning".to_string(),
+                title: "Missing slot kind".to_string(),
+                detail: format!("Slot {} does not declare text, media, badge, divider, action, or metadata.", slot.name),
+            });
+        }
+    }
+
+    validation_from_issues(issues)
+}
+
+fn validate_page_file(app: &AppHandle, page: &PageFile) -> Result<GroupValidation, String> {
+    let groups = read_all_groups(app)?;
+    let variants = read_all_variants(app)?;
+    Ok(validate_page_against_records(page, &groups, &variants))
+}
+
+fn validate_page_against_records(
+    page: &PageFile,
+    groups: &[GroupFile],
+    variants: &[VariantFile],
+) -> GroupValidation {
+    let mut issues = Vec::new();
+    let group_ids = groups
+        .iter()
+        .map(|group| group.group.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let variant_ids = variants
+        .iter()
+        .map(|variant| variant.variant.id.as_str())
+        .collect::<BTreeSet<_>>();
+
+    if page.page.name.trim().is_empty() {
+        issues.push(GroupValidationIssue {
+            severity: "error".to_string(),
+            title: "Missing page name".to_string(),
+            detail: "A page needs a name before it can be saved.".to_string(),
+        });
+    }
+
+    if page.regions.is_empty() {
+        issues.push(GroupValidationIssue {
+            severity: "error".to_string(),
+            title: "No page regions".to_string(),
+            detail: "A page needs at least one semantic region.".to_string(),
+        });
+    }
+
+    for region in &page.regions {
+        if !SUPPORTED_PAGE_LAYOUTS.contains(&region.layout.as_str()) {
+            issues.push(GroupValidationIssue {
+                severity: "error".to_string(),
+                title: "Unsupported page layout".to_string(),
+                detail: format!("{} is not one of {}.", region.layout, SUPPORTED_PAGE_LAYOUTS.join(", ")),
+            });
+        }
+
+        for block in &region.blocks {
+            if block.role.trim().is_empty() {
+                issues.push(GroupValidationIssue {
+                    severity: "warning".to_string(),
+                    title: "Missing block role".to_string(),
+                    detail: format!("{}:{} should describe its page role.", block.kind, block.reference),
+                });
+            }
+
+            match block.kind.as_str() {
+                "group" if !group_ids.contains(block.reference.as_str()) => {
+                    issues.push(GroupValidationIssue {
+                        severity: "error".to_string(),
+                        title: "Missing page group".to_string(),
+                        detail: format!("{} is not defined in metadata/groups.", block.reference),
+                    });
+                }
+                "variant" if !variant_ids.contains(block.reference.as_str()) => {
+                    issues.push(GroupValidationIssue {
+                        severity: "error".to_string(),
+                        title: "Missing page variant".to_string(),
+                        detail: format!("{} is not defined in metadata/variants.", block.reference),
+                    });
+                }
+                "group" | "variant" => {}
+                _ => issues.push(GroupValidationIssue {
+                    severity: "error".to_string(),
+                    title: "Unsupported page block".to_string(),
+                    detail: format!("{} is not group or variant.", block.kind),
+                }),
+            }
+        }
+    }
+
+    validation_from_issues(issues)
+}
+
+fn validation_from_issues(issues: Vec<GroupValidationIssue>) -> GroupValidation {
+    let status = if issues.iter().any(|issue| issue.severity == "error") {
+        "error"
+    } else if issues.iter().any(|issue| issue.severity == "warning") {
+        "warning"
+    } else {
+        "ready"
+    };
+
+    GroupValidation {
+        status: status.to_string(),
+        issue_count: issues.len(),
+        issues,
+    }
+}
+
+fn group_item_kind(item: &GroupItem) -> &str {
+    if item.kind.is_empty() {
+        "component"
+    } else {
+        item.kind.as_str()
+    }
+}
+
+fn group_item_reference(item: &GroupItem) -> String {
+    if group_item_kind(item) == "variant" {
+        format!("variant:{}", item.variant)
+    } else {
+        format!("{}:{}", item.component, item.state)
     }
 }
 
@@ -1305,6 +1857,28 @@ fn index_local_toml_source(app: &AppHandle) -> Result<(Vec<SourceCatalogItem>, V
         files: vec![format!("metadata/groups/{}.toml", group.group.id)],
         dependencies: Vec::new(),
         source_path: "metadata/groups".to_string(),
+        preview_status: "native".to_string(),
+    }));
+
+    items.extend(read_all_variants(app)?.into_iter().map(|variant| SourceCatalogItem {
+        id: format!("local-toml:variant:{}", variant.variant.id),
+        name: variant.variant.name,
+        item_type: "variant".to_string(),
+        description: variant.variant.description,
+        files: vec![format!("metadata/variants/{}.toml", variant.variant.id)],
+        dependencies: Vec::new(),
+        source_path: "metadata/variants".to_string(),
+        preview_status: "native".to_string(),
+    }));
+
+    items.extend(read_all_pages(app)?.into_iter().map(|page| SourceCatalogItem {
+        id: format!("local-toml:page:{}", page.page.id),
+        name: page.page.name,
+        item_type: "page".to_string(),
+        description: page.page.description,
+        files: vec![format!("metadata/pages/{}.toml", page.page.id)],
+        dependencies: Vec::new(),
+        source_path: "metadata/pages".to_string(),
         preview_status: "native".to_string(),
     }));
 
@@ -1658,7 +2232,7 @@ fn build_index_records(app: &AppHandle) -> Result<Vec<IndexRecord>, String> {
         let items = group
             .items
             .iter()
-            .map(|item| format!("{} uses {}:{}", item.role, item.component, item.state))
+            .map(|item| format!("{} uses {}", item.role, group_item_reference(item)))
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -1671,6 +2245,54 @@ fn build_index_records(app: &AppHandle) -> Result<Vec<IndexRecord>, String> {
                 group.group.description,
                 group.group.layout,
                 group.group.themes.join(", ")
+            ),
+        });
+    }
+
+    for variant in read_all_variants(app)? {
+        let slots = variant
+            .slots
+            .iter()
+            .map(|slot| format!("{} {} {}", slot.name, slot.kind, slot.value))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        records.push(IndexRecord {
+            id: format!("variant:{}", variant.variant.id),
+            record_type: "variant".to_string(),
+            title: variant.variant.name,
+            body: format!(
+                "{} Base: {}:{}. Slots: {slots}. Themes: {}.",
+                variant.variant.description,
+                variant.variant.component,
+                variant.variant.state,
+                variant.variant.themes.join(", ")
+            ),
+        });
+    }
+
+    for page in read_all_pages(app)? {
+        let blocks = page
+            .regions
+            .iter()
+            .flat_map(|region| {
+                region.blocks.iter().map(move |block| {
+                    format!(
+                        "{} region {} uses {}:{} as {}",
+                        region.label, region.layout, block.kind, block.reference, block.role
+                    )
+                })
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        records.push(IndexRecord {
+            id: format!("page:{}", page.page.id),
+            record_type: "page".to_string(),
+            title: page.page.name,
+            body: format!(
+                "{} Route: {}. Theme: {}. Blocks: {blocks}.",
+                page.page.description, page.page.route, page.page.theme
             ),
         });
     }
@@ -1762,6 +2384,24 @@ fn read_all_themes(app: &AppHandle) -> Result<Vec<ThemeFile>, String> {
 
 fn read_all_groups(app: &AppHandle) -> Result<Vec<GroupFile>, String> {
     read_all_toml(&metadata_dir(app).join("groups"))
+}
+
+fn read_all_variants(app: &AppHandle) -> Result<Vec<VariantFile>, String> {
+    let dir = metadata_dir(app).join("variants");
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    read_all_toml(&dir)
+}
+
+fn read_all_pages(app: &AppHandle) -> Result<Vec<PageFile>, String> {
+    let dir = metadata_dir(app).join("pages");
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    read_all_toml(&dir)
 }
 
 fn read_all_sources(app: &AppHandle) -> Result<Vec<SourceFile>, String> {
@@ -2009,12 +2649,22 @@ pub fn run() {
             load_component,
             list_groups,
             load_group,
+            list_variants,
+            load_variant,
+            list_pages,
+            load_page,
             list_sources,
             load_source_catalog,
             import_source_item_as_component,
             save_group,
             update_group,
             validate_group,
+            save_variant,
+            update_variant,
+            validate_variant,
+            save_page,
+            update_page,
+            validate_page,
             list_themes,
             load_theme,
             save_preview_selection,
