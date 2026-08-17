@@ -24,6 +24,7 @@ It is intentionally deterministic. The current app is a place to define componen
 - Reads source records from `metadata/sources`.
 - Indexes a local shadcn-style registry or component directory through the first shadcn adapter slice.
 - Shows source catalogs beside local components and groups.
+- Imports selected shadcn catalog items as local metadata components with source provenance and copied local source files.
 
 The TOML files are the current source of truth. Source records describe imported or external catalogs. DuckDB, adapter catalogs, screenshots, reports, and smoke artifacts are derived outputs.
 
@@ -164,7 +165,7 @@ Components define identity, supported props, named states, supported themes, and
 
 The adapter model extends this without replacing it: local TOML is the first adapter, shadcn import is the first external adapter target, and later libraries should normalize into the same catalog shape before they can participate in previews or page building.
 
-The current shadcn adapter slice can index a local shadcn-style registry with a root `registry.json`, or scan `components/ui/*.tsx` when no registry file is present. Imported entries are catalog items with provenance and preview status; they are not yet materialized as native editable components.
+The current shadcn adapter slice can index a local shadcn-style registry with a root `registry.json`, or scan `components/ui/*.tsx` when no registry file is present. Indexed entries keep provenance and preview status. A selected shadcn item can be materialized into `metadata/components` as a local metadata placeholder with an imported preview state, and its referenced source files are copied under `imports/shadcn/<source-id>/`. The app does not execute the copied TSX as a live preview yet.
 
 Duplicate group detection is based on a structural signature: group layout plus the ordered `component:state` item sequence. Names, descriptions, roles, and theme lists do not affect duplicate matching. See [Duplicate Structures](docs/METADATA.md#duplicate-structures) for the authoring rule.
 

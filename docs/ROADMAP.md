@@ -30,6 +30,7 @@ The useful direction is still not “add everything at once.” It is to make co
 - source records under `metadata/sources`
 - first shadcn adapter slice for local registry or `components/ui/*.tsx` directory indexing
 - Sources library tab and source catalog inspector
+- explicit shadcn item import into local component metadata placeholders with copied source files
 
 ## Next: Source Adapters
 
@@ -44,13 +45,12 @@ Next useful additions are source add/edit UI, last indexed time, public GitHub s
 
 2. Add shadcn import to the books
 
-shadcn is the first external adapter because its registry conventions provide a practical bridge from open-source component code into Theme Preview’s catalog. The current adapter can index local registry metadata and local `components/ui/*.tsx` files. The next shadcn adapter work should add:
+shadcn is the first external adapter because its registry conventions provide a practical bridge from open-source component code into Theme Preview’s catalog. The current adapter can index local registry metadata, scan local `components/ui/*.tsx` files, import selected entries as local metadata placeholders, and copy referenced source files into `imports/shadcn/<source-id>/`. The next shadcn adapter work should add:
 
 - reading public GitHub registry metadata where available
 - source add/edit UI for local directories
 - richer prop/example inference when discoverable
-- importing or materializing selected components only by explicit user action
-- previewing imported components beside existing TOML components
+- adapter-backed live rendering for imported components beside existing TOML components
 
 This should not assume every shadcn-like repo is perfectly structured. The adapter should start useful with partial metadata, clear warnings, and inspectable source records.
 

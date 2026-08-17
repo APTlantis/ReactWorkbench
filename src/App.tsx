@@ -208,6 +208,18 @@ type SourceCatalogItem = {
   previewStatus: string;
 };
 
+type SourceItemImportResult = {
+  componentId: string;
+  path: string;
+  materializedFiles: string[];
+  status: string;
+};
+
+type SourceItemImportRequest = {
+  sourceId: string;
+  itemId: string;
+};
+
 type GroupValidation = {
   status: "ready" | "warning" | "error";
   issueCount: number;
@@ -297,6 +309,7 @@ const metadataModules = import.meta.glob("../metadata/**/*.toml", {
 }) as Record<string, string>;
 
 let browserGroupFiles: GroupFile[] | null = null;
+let browserImportedComponents: ComponentFile[] = [];
 
 const groupLayouts: GroupLayout[] = ["row", "grid", "stack", "toolbar", "form-row", "dialog-footer", "table-header"];
 const booleanValue = (value: string | undefined) => value === "true";
@@ -342,6 +355,8 @@ async function browserInvoke<T>(command: string, args: InvokeArgs): Promise<T> {
       return listBrowserSources() as T;
     case "load_source_catalog":
       return loadBrowserSourceCatalog(String(args.sourceId)) as T;
+    case "import_source_item_as_component":
+      return importBrowserSourceItem(args.request as SourceItemImportRequest) as T;
     case "save_group":
       return saveBrowserGroup(args.group as GroupFile) as T;
     case "update_group":
@@ -443,7 +458,9 @@ function listBrowserComponents(): ComponentSummary[] {
 }
 
 function listBrowserComponentFiles(): ComponentFile[] {
-  return readBrowserMetadata<ComponentFile>("components");
+  return [...readBrowserMetadata<ComponentFile>("components"), ...browserImportedComponents.map(clone)].sort((left, right) =>
+    left.component.id.localeCompare(right.component.id),
+  );
 }
 
 function loadBrowserComponent(componentId: string): ComponentFile {
@@ -599,6 +616,75 @@ function loadBrowserSourceCatalog(sourceId: string): SourceCatalog {
   const catalog = [browserLocalTomlCatalog(), browserShadcnCatalog()].find((item) => item.source.id === sourceId);
   if (!catalog) throw new Error(`Source ${sourceId} was not found in browser metadata.`);
   return clone(catalog);
+}
+
+function importBrowserSourceItem(request: SourceItemImportRequest): SourceItemImportResult {
+  const catalog = loadBrowserSourceCatalog(request.sourceId);
+  const item = catalog.items.find((candidate) => candidate.id === request.itemId);
+  if (!item) throw new Error(`Item ${request.itemId} was not found in source ${request.sourceId}.`);
+  if (catalog.source.adapter !== "shadcn") {
+    throw new Error(`${catalog.source.adapter} items cannot be imported as components yet.`);
+  }
+
+  const component = importedBrowserComponentFromSourceItem(catalog.source, item);
+  if (listBrowserComponentFiles().some((candidate) => candidate.component.id === component.component.id)) {
+    throw new Error(`Component ${component.component.id} already exists.`);
+  }
+
+  browserImportedComponents = [...browserImportedComponents, component];
+  return {
+    componentId: component.component.id,
+    path: `browser://metadata/components/${component.component.id}.toml`,
+    materializedFiles: item.files.map((file) => `browser://imports/${catalog.source.adapter}/${catalog.source.id}/${file}`),
+    status: "imported",
+  };
+}
+
+function importedBrowserComponentFromSourceItem(source: SourceSummary, item: SourceCatalogItem): ComponentFile {
+  const componentId = slugify(`${source.id} ${item.name}`);
+  const files = item.files.length ? item.files.join(", ") : "none";
+  const dependencies = item.dependencies.length ? item.dependencies.join(", ") : "none";
+  const materializedFiles = item.files.length ? item.files.map((file) => `imports/${source.adapter}/${source.id}/${file}`).join(", ") : "none";
+  const props = {
+    label: item.name,
+    source: source.name,
+    adapter: source.adapter,
+    itemType: item.itemType,
+    files,
+    materializedFiles,
+    dependencies,
+    previewStatus: "metadata-import",
+  };
+
+  return {
+    component: {
+      id: componentId,
+      name: `${item.name} (${source.name})`,
+      description: `${item.description} Imported from ${source.location} using the ${source.adapter} adapter. Source files: ${files}. Local files: ${materializedFiles}.`,
+      themes: ["light", "dark", "aurora"],
+    },
+    framework: {
+      react: true,
+      svelte: false,
+    },
+    props: [
+      { id: "label", label: "Label", kind: "text", default: item.name, values: [] },
+      { id: "source", label: "Source", kind: "text", default: source.name, values: [] },
+      { id: "adapter", label: "Adapter", kind: "text", default: source.adapter, values: [] },
+      { id: "itemType", label: "Item Type", kind: "text", default: item.itemType, values: [] },
+      { id: "files", label: "Files", kind: "text", default: files, values: [] },
+      { id: "dependencies", label: "Dependencies", kind: "text", default: dependencies, values: [] },
+      { id: "materializedFiles", label: "Materialized Files", kind: "text", default: materializedFiles, values: [] },
+      { id: "previewStatus", label: "Preview Status", kind: "text", default: "metadata-import", values: [] },
+    ],
+    states: [
+      {
+        id: "imported",
+        label: "Imported",
+        props,
+      },
+    ],
+  };
 }
 
 function buildBrowserSourceIndexRecords(): CatalogResult[] {
@@ -914,6 +1000,8 @@ function App() {
   const [catalogType, setCatalogType] = useState("all");
   const [catalogResults, setCatalogResults] = useState<CatalogResult[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(null);
+  const [importingSourceItemId, setImportingSourceItemId] = useState<string | null>(null);
   const [screenshotReport, setScreenshotReport] = useState<ScreenshotReportSummary | null>(null);
   const [screenshotReports, setScreenshotReports] = useState<ScreenshotReportSummary[]>([]);
   const [screenshotReportError, setScreenshotReportError] = useState<string | null>(null);
@@ -1290,6 +1378,38 @@ function App() {
     }
   }
 
+  async function importSourceItem(item: SourceCatalogItem) {
+    if (!sourceCatalog) return;
+
+    setImportingSourceItemId(item.id);
+    setSourceActionMessage(null);
+    try {
+      const result = await invoke<SourceItemImportResult>("import_source_item_as_component", {
+        request: {
+          sourceId: sourceCatalog.source.id,
+          itemId: item.id,
+        },
+      });
+      const [componentList, loadedCatalog, environment] = await Promise.all([
+        invoke<ComponentSummary[]>("list_components"),
+        invoke<SourceCatalog>("load_source_catalog", { sourceId: sourceCatalog.source.id }),
+        invoke<EnvironmentStatus>("initialize_local_index"),
+      ]);
+      setComponents(componentList);
+      setSourceCatalog(loadedCatalog);
+      setStatus(environment);
+      setSelectedComponentId(result.componentId);
+      setActiveLibrary("components");
+      setIsCatalogOpen(false);
+      setIsReportOpen(false);
+      setSourceActionMessage(`Imported ${item.name} to ${result.path}; materialized ${result.materializedFiles.length} source file(s).`);
+    } catch (caught) {
+      setSourceActionMessage(String(caught));
+    } finally {
+      setImportingSourceItemId(null);
+    }
+  }
+
   const activeTitle =
     isGroupComposerOpen
       ? editingGroupId
@@ -1637,7 +1757,12 @@ function App() {
               onSelectReport={setScreenshotReport}
             />
           ) : activeLibrary === "sources" && sourceCatalog ? (
-            <SourceInspector catalog={sourceCatalog} />
+            <SourceInspector
+              actionMessage={sourceActionMessage}
+              catalog={sourceCatalog}
+              importingItemId={importingSourceItemId}
+              onImport={importSourceItem}
+            />
           ) : activeLibrary === "groups" && isGroupBoardOpen ? (
             <BoardInspector
               duplicateGroups={duplicateGroups}
@@ -2359,7 +2484,17 @@ function SourcePreview({ catalog }: { catalog: SourceCatalog }) {
   );
 }
 
-function SourceInspector({ catalog }: { catalog: SourceCatalog }) {
+function SourceInspector({
+  actionMessage,
+  catalog,
+  importingItemId,
+  onImport,
+}: {
+  actionMessage: string | null;
+  catalog: SourceCatalog;
+  importingItemId: string | null;
+  onImport: (item: SourceCatalogItem) => void;
+}) {
   return (
     <section className="source-inspector">
       <div className="source-summary">
@@ -2367,6 +2502,7 @@ function SourceInspector({ catalog }: { catalog: SourceCatalog }) {
         <span>{catalog.source.kind}</span>
         <small>{catalog.source.location}</small>
       </div>
+      {actionMessage && <p className={actionMessage.includes("Imported") ? "catalog-note" : "catalog-error"}>{actionMessage}</p>}
       {catalog.warnings.map((warning) => (
         <p className="catalog-error" key={warning}>
           {warning}
@@ -2383,6 +2519,11 @@ function SourceInspector({ catalog }: { catalog: SourceCatalog }) {
             <small>Preview: {item.previewStatus}</small>
             <small>Files: {item.files.length ? item.files.join(", ") : "none"}</small>
             <small>Dependencies: {item.dependencies.length ? item.dependencies.join(", ") : "none"}</small>
+            {catalog.source.adapter === "shadcn" && (
+              <button className="secondary-command" disabled={importingItemId === item.id} onClick={() => onImport(item)} type="button">
+                {importingItemId === item.id ? "Importing..." : "Import as metadata"}
+              </button>
+            )}
           </article>
         ))}
       </div>
@@ -3048,6 +3189,10 @@ function PropControl({
 }
 
 function PreviewRenderer({ component, props }: { component: string; props: Record<string, string> }) {
+  if (component === "button") {
+    return <PreviewButton props={props} />;
+  }
+
   if (component === "card") {
     return <PreviewCard props={props} />;
   }
@@ -3072,7 +3217,7 @@ function PreviewRenderer({ component, props }: { component: string; props: Recor
     return <PreviewTableControl props={props} />;
   }
 
-  return <PreviewButton props={props} />;
+  return <PreviewImportedComponent props={props} />;
 }
 
 function GroupPreview({
@@ -3317,6 +3462,31 @@ function PreviewTableControl({ props }: { props: Record<string, string> }) {
         </div>
       </dl>
     </div>
+  );
+}
+
+function PreviewImportedComponent({ props }: { props: Record<string, string> }) {
+  return (
+    <article className="sample-imported-component">
+      <header>
+        <span>{props.adapter ?? "adapter"}</span>
+        <strong>{props.label ?? "Imported Component"}</strong>
+      </header>
+      <p>{props.source ?? "External source"}</p>
+      <dl>
+        <div>
+          <dt>Type</dt>
+          <dd>{props.itemType ?? "component"}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{props.previewStatus ?? "indexed"}</dd>
+        </div>
+      </dl>
+      <small>{props.files ?? "No source files recorded"}</small>
+      <small>{props.materializedFiles ?? "No local import files recorded"}</small>
+      <small>{props.dependencies ?? "No dependencies recorded"}</small>
+    </article>
   );
 }
 

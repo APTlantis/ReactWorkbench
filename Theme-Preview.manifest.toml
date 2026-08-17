@@ -123,7 +123,7 @@ known_gaps = [
     "Signing is not configured; current signing posture is unsigned until proven otherwise.",
     "Git status requires non-global safe.directory handling because of local ownership metadata.",
     "D:\\Development.manifest.toml is referenced by root instructions but was absent during onboarding; this project does not create it.",
-    "Local source records and local shadcn registry/directory indexing exist; public GitHub shadcn import, component materialization, adapter-backed live previews, and page-builder foundations are not implemented yet.",
+    "Local source records, local shadcn registry/directory indexing, explicit shadcn item import as metadata placeholders, and local source-file materialization exist; public GitHub shadcn import, adapter-backed live previews, prop inference, and page-builder foundations are not implemented yet.",
 ]
 technical_debt = "moderate"
 

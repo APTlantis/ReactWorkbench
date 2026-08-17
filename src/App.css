@@ -2166,6 +2166,80 @@ button.report-count {
   background: color-mix(in srgb, var(--preview-warning), transparent 86%);
 }
 
+.sample-imported-component {
+  width: min(100%, 360px);
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--preview-border);
+  border-radius: var(--preview-radius);
+  color: var(--preview-text);
+  background: var(--preview-surface);
+}
+
+.sample-imported-component header {
+  display: grid;
+  gap: 3px;
+}
+
+.sample-imported-component header span {
+  color: var(--preview-primary);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.sample-imported-component header strong {
+  font-size: 1rem;
+}
+
+.sample-imported-component p,
+.sample-imported-component small {
+  margin: 0;
+  color: var(--preview-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.sample-imported-component dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.sample-imported-component dl div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 7px;
+  border: 1px solid var(--preview-border);
+  border-radius: 8px;
+  background: var(--preview-surface-muted);
+}
+
+.sample-imported-component dt,
+.sample-imported-component dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sample-imported-component dt {
+  color: var(--preview-muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.sample-imported-component dd {
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
 .state-strip {
   min-height: 58px;
   display: flex;
