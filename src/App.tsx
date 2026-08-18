@@ -245,7 +245,7 @@ type EnvironmentStatus = {
   message: string;
 };
 
-type CatalogRecordType = "component" | "theme" | "group" | "variant" | "page" | "source" | "shadcn-component" | "source-item";
+type CatalogRecordType = "component" | "theme" | "group" | "variant" | "page" | "source" | "source-item";
 
 type CatalogResult = {
   id: string;
@@ -281,18 +281,6 @@ type SourceCatalogItem = {
   dependencies: string[];
   sourcePath: string;
   previewStatus: string;
-};
-
-type SourceItemImportResult = {
-  componentId: string;
-  path: string;
-  materializedFiles: string[];
-  status: string;
-};
-
-type SourceItemImportRequest = {
-  sourceId: string;
-  itemId: string;
 };
 
 type GroupValidation = {
@@ -388,7 +376,6 @@ const metadataModules = import.meta.glob("../metadata/**/*.toml", {
 let browserGroupFiles: GroupFile[] | null = null;
 let browserVariantFiles: VariantFile[] | null = null;
 let browserPageFiles: PageFile[] | null = null;
-let browserImportedComponents: ComponentFile[] = [];
 
 const groupLayouts: GroupLayout[] = ["row", "grid", "stack", "toolbar", "form-row", "dialog-footer", "table-header"];
 const pageLayouts: PageLayout[] = ["stack", "grid", "split", "sidebar", "section"];
@@ -522,8 +509,6 @@ async function browserInvoke<T>(command: string, args: InvokeArgs): Promise<T> {
       return listBrowserSources() as T;
     case "load_source_catalog":
       return loadBrowserSourceCatalog(String(args.sourceId)) as T;
-    case "import_source_item_as_component":
-      return importBrowserSourceItem(args.request as SourceItemImportRequest) as T;
     case "save_group":
       return saveBrowserGroup(args.group as GroupFile) as T;
     case "update_group":
@@ -625,9 +610,7 @@ function listBrowserComponents(): ComponentSummary[] {
 }
 
 function listBrowserComponentFiles(): ComponentFile[] {
-  return [...readBrowserMetadata<ComponentFile>("components"), ...browserImportedComponents.map(clone)].sort((left, right) =>
-    left.component.id.localeCompare(right.component.id),
-  );
+  return readBrowserMetadata<ComponentFile>("components").sort((left, right) => left.component.id.localeCompare(right.component.id));
 }
 
 function loadBrowserComponent(componentId: string): ComponentFile {
@@ -931,86 +914,17 @@ function buildBrowserIndexRecords(): CatalogResult[] {
 }
 
 function listBrowserSources(): SourceSummary[] {
-  return [browserLocalTomlCatalog(), browserShadcnCatalog()].map((catalog) => catalog.source);
+  return [browserLocalTomlCatalog()].map((catalog) => catalog.source);
 }
 
 function loadBrowserSourceCatalog(sourceId: string): SourceCatalog {
-  const catalog = [browserLocalTomlCatalog(), browserShadcnCatalog()].find((item) => item.source.id === sourceId);
+  const catalog = [browserLocalTomlCatalog()].find((item) => item.source.id === sourceId);
   if (!catalog) throw new Error(`Source ${sourceId} was not found in browser metadata.`);
   return clone(catalog);
 }
 
-function importBrowserSourceItem(request: SourceItemImportRequest): SourceItemImportResult {
-  const catalog = loadBrowserSourceCatalog(request.sourceId);
-  const item = catalog.items.find((candidate) => candidate.id === request.itemId);
-  if (!item) throw new Error(`Item ${request.itemId} was not found in source ${request.sourceId}.`);
-  if (catalog.source.adapter !== "shadcn") {
-    throw new Error(`${catalog.source.adapter} items cannot be imported as components yet.`);
-  }
-
-  const component = importedBrowserComponentFromSourceItem(catalog.source, item);
-  if (listBrowserComponentFiles().some((candidate) => candidate.component.id === component.component.id)) {
-    throw new Error(`Component ${component.component.id} already exists.`);
-  }
-
-  browserImportedComponents = [...browserImportedComponents, component];
-  return {
-    componentId: component.component.id,
-    path: `browser://metadata/components/${component.component.id}.toml`,
-    materializedFiles: item.files.map((file) => `browser://imports/${catalog.source.adapter}/${catalog.source.id}/${file}`),
-    status: "imported",
-  };
-}
-
-function importedBrowserComponentFromSourceItem(source: SourceSummary, item: SourceCatalogItem): ComponentFile {
-  const componentId = slugify(`${source.id} ${item.name}`);
-  const files = item.files.length ? item.files.join(", ") : "none";
-  const dependencies = item.dependencies.length ? item.dependencies.join(", ") : "none";
-  const materializedFiles = item.files.length ? item.files.map((file) => `imports/${source.adapter}/${source.id}/${file}`).join(", ") : "none";
-  const props = {
-    label: item.name,
-    source: source.name,
-    adapter: source.adapter,
-    itemType: item.itemType,
-    files,
-    materializedFiles,
-    dependencies,
-    previewStatus: "metadata-import",
-  };
-
-  return {
-    component: {
-      id: componentId,
-      name: `${item.name} (${source.name})`,
-      description: `${item.description} Imported from ${source.location} using the ${source.adapter} adapter. Source files: ${files}. Local files: ${materializedFiles}.`,
-      themes: ["light", "dark", "aurora"],
-    },
-    framework: {
-      react: true,
-      svelte: false,
-    },
-    props: [
-      { id: "label", label: "Label", kind: "text", default: item.name, values: [] },
-      { id: "source", label: "Source", kind: "text", default: source.name, values: [] },
-      { id: "adapter", label: "Adapter", kind: "text", default: source.adapter, values: [] },
-      { id: "itemType", label: "Item Type", kind: "text", default: item.itemType, values: [] },
-      { id: "files", label: "Files", kind: "text", default: files, values: [] },
-      { id: "dependencies", label: "Dependencies", kind: "text", default: dependencies, values: [] },
-      { id: "materializedFiles", label: "Materialized Files", kind: "text", default: materializedFiles, values: [] },
-      { id: "previewStatus", label: "Preview Status", kind: "text", default: "metadata-import", values: [] },
-    ],
-    states: [
-      {
-        id: "imported",
-        label: "Imported",
-        props,
-      },
-    ],
-  };
-}
-
 function buildBrowserSourceIndexRecords(): CatalogResult[] {
-  return [browserLocalTomlCatalog(), browserShadcnCatalog()].flatMap((catalog) => [
+  return [browserLocalTomlCatalog()].flatMap((catalog) => [
     {
       id: `source:${catalog.source.id}`,
       recordType: "source" as const,
@@ -1018,8 +932,8 @@ function buildBrowserSourceIndexRecords(): CatalogResult[] {
       body: `${catalog.source.description} Adapter: ${catalog.source.adapter}. Kind: ${catalog.source.kind}. Location: ${catalog.source.location}. Items: ${catalog.items.length}.`,
     },
     ...catalog.items.map((item) => ({
-      id: `${catalog.source.adapter === "shadcn" ? "shadcn-component" : "source-item"}:${item.id}`,
-      recordType: catalog.source.adapter === "shadcn" ? ("shadcn-component" as const) : ("source-item" as const),
+      id: `source-item:${item.id}`,
+      recordType: "source-item" as const,
       title: item.name,
       body: `${item.description} Source: ${catalog.source.name}. Type: ${item.itemType}. Files: ${item.files.join(", ")}. Dependencies: ${
         item.dependencies.length ? item.dependencies.join(", ") : "none"
@@ -1090,47 +1004,6 @@ function browserLocalTomlCatalog(): SourceCatalog {
       adapter: "local-toml",
       kind: "local-directory",
       location: "metadata",
-      enabled: true,
-      itemCount: items.length,
-      status: "ready",
-    },
-    items,
-    warnings: [],
-  };
-}
-
-function browserShadcnCatalog(): SourceCatalog {
-  const items: SourceCatalogItem[] = [
-    {
-      id: "shadcn-fixture:button",
-      name: "Button",
-      itemType: "registry:ui",
-      description: "Action button fixture shaped like a shadcn registry item.",
-      files: ["components/ui/button.tsx"],
-      dependencies: ["@radix-ui/react-slot", "class-variance-authority"],
-      sourcePath: "examples/shadcn-registry/registry.json",
-      previewStatus: "indexed",
-    },
-    {
-      id: "shadcn-fixture:card",
-      name: "Card",
-      itemType: "registry:ui",
-      description: "Surface fixture for adapter catalog and preview planning.",
-      files: ["components/ui/card.tsx"],
-      dependencies: [],
-      sourcePath: "examples/shadcn-registry/registry.json",
-      previewStatus: "indexed",
-    },
-  ];
-
-  return {
-    source: {
-      id: "shadcn-fixture",
-      name: "shadcn Fixture Registry",
-      description: "Local shadcn-style registry fixture used to exercise adapter indexing without network access.",
-      adapter: "shadcn",
-      kind: "local-directory",
-      location: "examples/shadcn-registry",
       enabled: true,
       itemCount: items.length,
       status: "ready",
@@ -1524,8 +1397,6 @@ function App() {
   const [catalogType, setCatalogType] = useState("all");
   const [catalogResults, setCatalogResults] = useState<CatalogResult[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(null);
-  const [importingSourceItemId, setImportingSourceItemId] = useState<string | null>(null);
   const [screenshotReport, setScreenshotReport] = useState<ScreenshotReportSummary | null>(null);
   const [screenshotReports, setScreenshotReports] = useState<ScreenshotReportSummary[]>([]);
   const [screenshotReportError, setScreenshotReportError] = useState<string | null>(null);
@@ -1937,7 +1808,7 @@ function App() {
   }
 
   function openCatalogResult(result: CatalogResult) {
-    const [kind, ...idParts] = result.id.split(":");
+    const [, ...idParts] = result.id.split(":");
     const id = idParts.join(":");
 
     if (result.recordType === "component") {
@@ -1979,9 +1850,9 @@ function App() {
       setIsReportOpen(false);
     }
 
-    if (result.recordType === "shadcn-component" || result.recordType === "source-item") {
+    if (result.recordType === "source-item") {
       setActiveLibrary("sources");
-      setSelectedSourceId(id.split(":")[0] || kind);
+      setSelectedSourceId("local-toml");
       setIsGroupBoardOpen(false);
       setIsReportOpen(false);
     }
@@ -2193,38 +2064,6 @@ function App() {
       setStatus(environment);
     } catch (caught) {
       setSaveMessage(String(caught));
-    }
-  }
-
-  async function importSourceItem(item: SourceCatalogItem) {
-    if (!sourceCatalog) return;
-
-    setImportingSourceItemId(item.id);
-    setSourceActionMessage(null);
-    try {
-      const result = await invoke<SourceItemImportResult>("import_source_item_as_component", {
-        request: {
-          sourceId: sourceCatalog.source.id,
-          itemId: item.id,
-        },
-      });
-      const [componentList, loadedCatalog, environment] = await Promise.all([
-        invoke<ComponentSummary[]>("list_components"),
-        invoke<SourceCatalog>("load_source_catalog", { sourceId: sourceCatalog.source.id }),
-        invoke<EnvironmentStatus>("initialize_local_index"),
-      ]);
-      setComponents(componentList);
-      setSourceCatalog(loadedCatalog);
-      setStatus(environment);
-      setSelectedComponentId(result.componentId);
-      setActiveLibrary("components");
-      setIsCatalogOpen(false);
-      setIsReportOpen(false);
-      setSourceActionMessage(`Imported ${item.name} to ${result.path}; materialized ${result.materializedFiles.length} source file(s).`);
-    } catch (caught) {
-      setSourceActionMessage(String(caught));
-    } finally {
-      setImportingSourceItemId(null);
     }
   }
 
@@ -2732,10 +2571,7 @@ function App() {
             />
           ) : activeLibrary === "sources" && sourceCatalog ? (
             <SourceInspector
-              actionMessage={sourceActionMessage}
               catalog={sourceCatalog}
-              importingItemId={importingSourceItemId}
-              onImport={importSourceItem}
             />
           ) : activeLibrary === "groups" && isGroupBoardOpen ? (
             <BoardInspector
@@ -4065,15 +3901,9 @@ function SourcePreview({ catalog }: { catalog: SourceCatalog }) {
 }
 
 function SourceInspector({
-  actionMessage,
   catalog,
-  importingItemId,
-  onImport,
 }: {
-  actionMessage: string | null;
   catalog: SourceCatalog;
-  importingItemId: string | null;
-  onImport: (item: SourceCatalogItem) => void;
 }) {
   return (
     <section className="source-inspector">
@@ -4082,7 +3912,6 @@ function SourceInspector({
         <span>{catalog.source.kind}</span>
         <small>{catalog.source.location}</small>
       </div>
-      {actionMessage && <p className={actionMessage.includes("Imported") ? "catalog-note" : "catalog-error"}>{actionMessage}</p>}
       {catalog.warnings.map((warning) => (
         <p className="catalog-error" key={warning}>
           {warning}
@@ -4099,11 +3928,6 @@ function SourceInspector({
             <small>Preview: {item.previewStatus}</small>
             <small>Files: {item.files.length ? item.files.join(", ") : "none"}</small>
             <small>Dependencies: {item.dependencies.length ? item.dependencies.join(", ") : "none"}</small>
-            {catalog.source.adapter === "shadcn" && (
-              <button className="secondary-command" disabled={importingItemId === item.id} onClick={() => onImport(item)} type="button">
-                {importingItemId === item.id ? "Importing..." : "Import as metadata"}
-              </button>
-            )}
           </article>
         ))}
       </div>
@@ -4152,7 +3976,6 @@ function CatalogPanel({
           <option value="page">pages</option>
           <option value="theme">themes</option>
           <option value="source">sources</option>
-          <option value="shadcn-component">shadcn components</option>
         </select>
       </label>
       {!indexReady && <p className="catalog-note">DuckDB is not ready, so the catalog is using file previews only.</p>}
@@ -4799,7 +4622,7 @@ function PreviewRenderer({ component, props }: { component: string; props: Recor
     return <PreviewTableControl props={props} />;
   }
 
-  return <PreviewImportedComponent props={props} />;
+  return <PreviewUnknownComponent props={props} />;
 }
 
 function GroupPreview({
@@ -5172,14 +4995,14 @@ function PreviewTableControl({ props }: { props: Record<string, string> }) {
   );
 }
 
-function PreviewImportedComponent({ props }: { props: Record<string, string> }) {
+function PreviewUnknownComponent({ props }: { props: Record<string, string> }) {
   return (
-    <article className="sample-imported-component">
+    <article className="sample-unknown-component">
       <header>
-        <span>{props.adapter ?? "adapter"}</span>
-        <strong>{props.label ?? "Imported Component"}</strong>
+        <span>{props.source ?? "metadata"}</span>
+        <strong>{props.label ?? "Unknown Component"}</strong>
       </header>
-      <p>{props.source ?? "External source"}</p>
+      <p>No preview renderer is registered for this component id.</p>
       <dl>
         <div>
           <dt>Type</dt>
@@ -5191,7 +5014,6 @@ function PreviewImportedComponent({ props }: { props: Record<string, string> }) 
         </div>
       </dl>
       <small>{props.files ?? "No source files recorded"}</small>
-      <small>{props.materializedFiles ?? "No local import files recorded"}</small>
       <small>{props.dependencies ?? "No dependencies recorded"}</small>
     </article>
   );

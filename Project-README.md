@@ -4,7 +4,7 @@
 
 Theme Preview is a local-first Tauri desktop laboratory for inspecting UI components, theme tokens, reusable component groups, saved variants, and block-based pages from explicit TOML metadata. It makes important component states, combinations, and page assemblies visible, renderable, searchable, and checkable.
 
-The first implementation is a deterministic preview studio. The current builder rule is: components are configured, groups are composed, and pages are arranged. The long-term product direction is a fuller UI builder that can register multiple component sources, import shadcn-compatible component catalogs, save reusable component variants, and compose pages from local and imported components.
+The first implementation is a deterministic preview studio. The current builder rule is: components are configured, groups are composed, and pages are arranged. The long-term product direction is a fuller UI builder that saves reusable component variants, composes groups, arranges pages from explicit local metadata, and can later reopen external source adapters when project records define them.
 
 The current source of truth is the TOML metadata under `metadata/components`, `metadata/variants`, `metadata/groups`, `metadata/pages`, and `metadata/themes`. Future imported sources should be represented by explicit source records and adapter catalogs. DuckDB catalogs, screenshots, comparison reports, smoke artifacts, `dist`, and Tauri build outputs are derived.
 
@@ -24,14 +24,14 @@ Lifecycle: `release-prep`.
 
 The app has a working Tauri 2 shell, React + TypeScript frontend, Rust command layer, TOML metadata catalogs, visual preview exports, screenshot comparison reports, deterministic smoke checks, and documented verification commands. `npm run verify` passed from `D:\DRS\Theme-Preview` on 2026-08-11. Existing built artifacts are preserved, but they are not certified release artifacts until a DRS release gate verifies hashes and install behavior.
 
-The planning docs now treat source adapters and shadcn import as the next product expansion before page-builder editing.
+The planning docs now treat saved variants, variant-backed groups, block-based pages, and predictable React export planning as the active expansion path. External source adapters are deferred until they are intentionally reintroduced.
 
 ## Architecture
 
 - React + TypeScript renders the preview studio and review surfaces.
 - Rust/Tauri loads local metadata and provides the desktop shell.
 - TOML metadata describes components, variants, groups, pages, and themes.
-- Planned source adapters normalize external component libraries into the local catalog model.
+- Source records index the local TOML catalog; future external adapters must be reintroduced through explicit project records.
 - Node scripts export screenshots, compare visual snapshots, review reports, and run smoke verification.
 
 ## Repository layout
@@ -63,7 +63,7 @@ Existing MSI, NSIS, executable, frontend build, screenshot, and smoke artifacts 
 - Certify or rebuild installer artifacts before any release claim.
 - Record SHA-256 hashes only after selecting final release artifacts.
 - Verify install, launch, uninstall, and docs-in-package behavior.
-- Define source records for local TOML and shadcn-compatible imports.
+- Keep source records aligned with the local TOML catalog and revisit external adapters only through a fresh scoped plan.
 - Keep the metadata guide and roadmap aligned with the deterministic adapter and builder model.
 
 ## Handoff notes

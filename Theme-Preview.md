@@ -1,6 +1,6 @@
 # Theme Preview Brief
 
-Theme Preview is a desktop component exploration studio growing into a local-first UI builder. It helps a user define or import UI components, named states, theme tokens, saved variants, reusable component groups, and pages, then inspect the resulting previews in a predictable app.
+Theme Preview is a desktop component exploration studio growing into a local-first UI builder. It helps a user define UI components, named states, theme tokens, saved variants, reusable component groups, and pages, then inspect the resulting previews in a predictable app.
 
 The current builder rule is: components are configured, groups are composed, and pages are arranged. Component variants are the reusable layer between stock components and page sections.
 
@@ -8,7 +8,7 @@ The project is built around one practical idea: UI systems become easier to trus
 
 ## Product Position
 
-Theme Preview started smaller than its final ambition on purpose. The first surface is not a drag-and-drop page editor, Figma replacement, or prompt-generated UI designer. The long-term product direction is a fuller UI builder that can work from local metadata and imported open-source component systems.
+Theme Preview started smaller than its final ambition on purpose. The first surface is not a drag-and-drop page editor, Figma replacement, or prompt-generated UI designer. The long-term product direction is a fuller UI builder that works from local metadata first and can reopen external component systems only when project records scope them deliberately.
 
 The current app is closer to a lab bench for component systems:
 
@@ -19,7 +19,7 @@ The current app is closer to a lab bench for component systems:
 - inspect duplicate structures and validation warnings
 - export screenshots and compare visual output over time
 
-That lab bench becomes the foundation for source adapters, shadcn imports, and later page composition. The result should feel useful before any AI-assisted features are added.
+That lab bench becomes the foundation for saved variants, block-based page composition, and later export planning. The result should feel useful before any AI-assisted features are added.
 
 ## Current Shape
 
@@ -49,14 +49,13 @@ The app currently includes:
 
 ## Long-Term Product Direction
 
-Theme Preview should become a builder that can work with multiple component sources:
+Theme Preview should become a builder that can work from explicit component sources:
 
 - local TOML metadata
-- shadcn-compatible registries and local component directories
-- later adapters for other open-source component libraries
-- user-authored component sets
+- later adapters for open-source component libraries, if refreshed project records define them
+- user-authored component sets, if they are represented by explicit source records
 
-The first adapter target is shadcn because its registry model gives the project a practical import shape: source records can point at a local directory or public GitHub registry, index available components, preserve provenance, and expose imported components beside the current local metadata.
+The active source is local TOML. External adapters are deferred; if they return, their source records must preserve provenance, preview support, and verification boundaries before imported components appear beside local metadata.
 
 Page building is now represented by explicit metadata records, not hidden generated output. The first page editor is block-based: it arranges saved groups and variants inside semantic regions, without absolute positioning or arbitrary imported page editing.
 
@@ -67,7 +66,7 @@ The current metadata set includes components, variants, groups, pages, sources, 
 The main workflow is deliberately simple:
 
 1. Define components, states, themes, and groups in TOML.
-2. Register or import component sources, starting with planned shadcn support.
+2. Inspect the local source catalog and keep metadata provenance explicit.
 3. Open the app and inspect individual component states.
 4. Switch themes and compare tokens.
 5. Inspect saved groups in the board.
@@ -84,15 +83,18 @@ This keeps the work grounded in explicit source files and source records instead
 
 ## Metadata Model
 
-Theme Preview currently understands three metadata types:
+Theme Preview currently understands these metadata types:
 
 - components
 - themes
 - groups
+- variants
+- pages
+- sources
 
-Components define available props and named states. Themes define token values. Groups reference known component states and arrange them into named UI areas.
+Components define available props and named states. Themes define token values. Variants save reusable component recipes. Groups reference known component states or variants and arrange them into named UI areas. Pages arrange groups and variants into semantic regions.
 
-Future source records should describe where a component catalog came from, how it was imported, which adapter owns it, and whether generated catalog data is current.
+The current source record describes the local TOML catalog. Future source records should describe where a component catalog came from, how it is represented, which adapter owns it, and whether generated catalog data is current.
 
 A group is not a page. It is a reusable area of interface, such as:
 
@@ -103,7 +105,7 @@ A group is not a page. It is a reusable area of interface, such as:
 - confirmation footer
 - table header
 
-The user decides what belongs in a group. The app checks whether each referenced component and state exists, then renders the group under the active theme. Later, pages should compose groups and individual components while preserving the same explicit source model.
+The user decides what belongs in a group. The app checks whether each referenced component/state or variant exists, then renders the group under the active theme. Pages compose groups and variants while preserving the same explicit source model.
 
 ## Duplicate Structures
 
@@ -153,11 +155,11 @@ The useful next work is not to add every possible design feature. It is to keep 
 Good next steps include:
 
 - clearer metadata documentation and examples
-- source records for local and imported component catalogs
-- shadcn import and preview planning
-- adapter-backed component selection
-- stronger deterministic visual checks around imported components
-- saved page metadata after adapter-backed previews are reliable
+- source records for the local component catalog
+- stronger Variant Workshop controls
+- block-based page arrangement from variants and groups
+- predictable React export planning
+- stronger deterministic visual checks around saved variants and pages
 - embedding-assisted search only after the deterministic catalog feels solid
 
 The north star is a builder that can use real component systems without hiding how the UI was assembled.

@@ -2166,7 +2166,7 @@ button.report-count {
   background: color-mix(in srgb, var(--preview-warning), transparent 86%);
 }
 
-.sample-imported-component {
+.sample-unknown-component {
   width: min(100%, 360px);
   display: grid;
   gap: 10px;
@@ -2177,24 +2177,24 @@ button.report-count {
   background: var(--preview-surface);
 }
 
-.sample-imported-component header {
+.sample-unknown-component header {
   display: grid;
   gap: 3px;
 }
 
-.sample-imported-component header span {
+.sample-unknown-component header span {
   color: var(--preview-primary);
   font-size: 0.72rem;
   font-weight: 850;
   text-transform: uppercase;
 }
 
-.sample-imported-component header strong {
+.sample-unknown-component header strong {
   font-size: 1rem;
 }
 
-.sample-imported-component p,
-.sample-imported-component small {
+.sample-unknown-component p,
+.sample-unknown-component small {
   margin: 0;
   color: var(--preview-muted);
   font-size: 0.78rem;
@@ -2202,14 +2202,14 @@ button.report-count {
   overflow-wrap: anywhere;
 }
 
-.sample-imported-component dl {
+.sample-unknown-component dl {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin: 0;
 }
 
-.sample-imported-component dl div {
+.sample-unknown-component dl div {
   min-width: 0;
   display: grid;
   gap: 2px;
@@ -2219,8 +2219,8 @@ button.report-count {
   background: var(--preview-surface-muted);
 }
 
-.sample-imported-component dt,
-.sample-imported-component dd {
+.sample-unknown-component dt,
+.sample-unknown-component dd {
   min-width: 0;
   margin: 0;
   overflow: hidden;
@@ -2228,14 +2228,14 @@ button.report-count {
   white-space: nowrap;
 }
 
-.sample-imported-component dt {
+.sample-unknown-component dt {
   color: var(--preview-muted);
   font-size: 0.68rem;
   font-weight: 850;
   text-transform: uppercase;
 }
 
-.sample-imported-component dd {
+.sample-unknown-component dd {
   font-size: 0.78rem;
   font-weight: 850;
 }

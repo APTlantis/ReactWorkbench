@@ -4,21 +4,21 @@ Theme Preview is a component exploration studio growing into a local-first UI bu
 
 Most UI work has a hidden problem: the important pieces are scattered. A component has props, states, themes, layout expectations, accessibility concerns, documentation, and examples. Those details usually live in separate places, so checking a simple question can become surprisingly repetitive.
 
-Theme Preview makes those pieces explicit. The first version does this through local TOML metadata. The longer-term product should also understand established component systems, starting with shadcn-style registries or local directories, then use those sources to build real pages.
+Theme Preview makes those pieces explicit. The first version does this through local TOML metadata. The longer-term product can reopen established component-system adapters later, but the active builder path is local metadata, saved variants, groups, and pages.
 
 ## The Core Idea
 
-Instead of manually building every preview by hand, the user describes or imports UI pieces as source records:
+Instead of manually building every preview by hand, the user describes UI pieces as source records:
 
 - what components exist
 - what props they support
 - what states matter
 - what themes exist
 - which components belong together in a named area
-- which external component source a component came from
+- which source record a component came from
 - which page or layout uses those pieces
 
-The app then renders those definitions and lets the user inspect them. The current TOML model is the first adapter. A shadcn adapter is the planned next step so a user can point at a repo or local directory and bring those components into the same working surface.
+The app then renders those definitions and lets the user inspect them. The current TOML model is the active adapter. Future external adapters should be added only when their source records, provenance rules, and preview boundaries are deliberately scoped.
 
 This is useful even for someone who knows UI well. Knowing how to build a thing is different from wanting to rebuild it every time just to check one visual combination.
 
@@ -41,18 +41,17 @@ The user decides what belongs in the group. The app checks whether the reference
 
 The long-term target is a fuller UI builder:
 
-- register multiple component sources
-- switch between local TOML, shadcn imports, and later other adapters
+- keep local TOML as the explicit active source, with later adapters added only through refreshed scope
 - choose components from any active source
 - compose groups and pages from those components
-- preserve source provenance for every imported component
+- preserve source provenance for every component
 - preview, verify, screenshot, and compare the result
 
-The builder should grow from the deterministic lab bench rather than bypass it. That means imported components, page layouts, and generated outputs need explicit records the app can inspect and verify.
+The builder should grow from the deterministic lab bench rather than bypass it. That means components, page layouts, and generated outputs need explicit records the app can inspect and verify.
 
 ## What Still Needs Guardrails
 
-Theme Preview should not become a Figma replacement or prompt-only generative designer. Page building is now part of the product direction, but it should be built through components, props, layouts, themes, and source adapters that remain visible and editable.
+Theme Preview should not become a Figma replacement or prompt-only generative designer. Page building is now part of the product direction, but it should be built through components, props, layouts, themes, and source records that remain visible and editable.
 
 ## Why Deterministic First
 

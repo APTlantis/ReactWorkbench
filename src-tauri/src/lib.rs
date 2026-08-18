@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     process::Command,
     time::SystemTime,
 };
@@ -321,22 +321,6 @@ struct SourceCatalogItem {
     preview_status: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SourceItemImportRequest {
-    source_id: String,
-    item_id: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SourceItemImportResult {
-    component_id: String,
-    path: String,
-    materialized_files: Vec<String>,
-    status: String,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct GroupValidation {
@@ -516,37 +500,6 @@ struct IndexRecord {
     body: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ShadcnRegistry {
-    #[serde(default)]
-    items: Vec<ShadcnRegistryItem>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ShadcnRegistryItem {
-    name: String,
-    #[serde(default, rename = "type")]
-    item_type: String,
-    #[serde(default)]
-    title: Option<String>,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    files: Vec<ShadcnRegistryFile>,
-    #[serde(default)]
-    dependencies: Vec<String>,
-    #[serde(default)]
-    registry_dependencies: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ShadcnRegistryFile {
-    path: String,
-}
-
 const SUPPORTED_GROUP_LAYOUTS: &[&str] = &[
     "row",
     "grid",
@@ -675,62 +628,6 @@ fn load_source_catalog(app: AppHandle, source_id: String) -> Result<SourceCatalo
         .find(|candidate| candidate.source.id == source_id)
         .ok_or_else(|| format!("Source {source_id} was not found in metadata/sources."))?;
     build_source_catalog(&app, &source)
-}
-
-#[tauri::command]
-fn import_source_item_as_component(
-    app: AppHandle,
-    request: SourceItemImportRequest,
-) -> Result<SourceItemImportResult, String> {
-    let sources = read_all_sources(&app)?;
-    let source = sources
-        .into_iter()
-        .find(|candidate| candidate.source.id == request.source_id)
-        .ok_or_else(|| format!("Source {} was not found in metadata/sources.", request.source_id))?;
-    if source.source.adapter != "shadcn" {
-        return Err(format!(
-            "Source {} uses adapter {}, which cannot be imported as a component yet.",
-            source.source.name, source.source.adapter
-        ));
-    }
-
-    let catalog = build_source_catalog(&app, &source)?;
-    let item = catalog
-        .items
-        .into_iter()
-        .find(|candidate| candidate.id == request.item_id)
-        .ok_or_else(|| format!("Item {} was not found in source {}.", request.item_id, request.source_id))?;
-    let materialized_files = materialize_source_item_files(&app, &source.source, &item)?;
-    let component = imported_component_from_source_item(&source.source, &item, &materialized_files);
-    let dir = writable_metadata_dir(&app).join("components");
-    fs::create_dir_all(&dir).map_err(|error| {
-        format!(
-            "Could not create component metadata directory {}: {error}",
-            dir.display()
-        )
-    })?;
-    let path = dir.join(format!("{}.toml", component.component.id));
-    if path.exists() {
-        return Err(format!(
-            "Component {} already exists. Remove or rename it before importing again.",
-            component.component.id
-        ));
-    }
-    let toml = toml::to_string_pretty(&component)
-        .map_err(|error| format!("Could not serialize imported component metadata: {error}"))?;
-    fs::write(&path, toml).map_err(|error| {
-        format!(
-            "Could not save imported component metadata {}: {error}",
-            path.display()
-        )
-    })?;
-
-    Ok(SourceItemImportResult {
-        component_id: component.component.id,
-        path: path.display().to_string(),
-        materialized_files,
-        status: "imported".to_string(),
-    })
 }
 
 #[tauri::command]
@@ -1483,6 +1380,7 @@ fn validate_group_file(app: &AppHandle, group: &GroupFile) -> Result<GroupValida
     ))
 }
 
+#[cfg(test)]
 fn validate_group_against_components(
     group: &GroupFile,
     components: &[ComponentFile],
@@ -1807,7 +1705,6 @@ fn summarize_source(app: &AppHandle, source: &SourceFile) -> Result<SourceSummar
 fn build_source_catalog(app: &AppHandle, source: &SourceFile) -> Result<SourceCatalog, String> {
     let (items, warnings) = match source.source.adapter.as_str() {
         "local-toml" => index_local_toml_source(app)?,
-        "shadcn" => index_shadcn_source(app, source)?,
         adapter => (
             Vec::new(),
             vec![format!("Adapter {adapter} is not supported yet.")],
@@ -1899,288 +1796,6 @@ fn index_local_toml_source(app: &AppHandle) -> Result<(Vec<SourceCatalogItem>, V
             .then(left.name.cmp(&right.name))
     });
     Ok((items, Vec::new()))
-}
-
-fn index_shadcn_source(
-    app: &AppHandle,
-    source: &SourceFile,
-) -> Result<(Vec<SourceCatalogItem>, Vec<String>), String> {
-    let source_root = resolve_source_location(app, &source.source.location);
-    index_shadcn_source_root(&source.source.id, &source_root)
-}
-
-fn index_shadcn_source_root(
-    source_id: &str,
-    source_root: &Path,
-) -> Result<(Vec<SourceCatalogItem>, Vec<String>), String> {
-    let mut warnings = Vec::new();
-
-    if !source_root.is_dir() {
-        return Ok((
-            Vec::new(),
-            vec![format!(
-                "Source directory {} does not exist.",
-                source_root.display()
-            )],
-        ));
-    }
-
-    let registry_path = source_root.join("registry.json");
-    if registry_path.is_file() {
-        let content = fs::read_to_string(&registry_path).map_err(|error| {
-            format!(
-                "Could not read shadcn registry {}: {error}",
-                registry_path.display()
-            )
-        })?;
-        let registry = serde_json::from_str::<ShadcnRegistry>(&content).map_err(|error| {
-            format!(
-                "Could not parse shadcn registry {}: {error}",
-                registry_path.display()
-            )
-        })?;
-        let mut items = registry
-            .items
-            .into_iter()
-            .map(|item| {
-                let files = item
-                    .files
-                    .iter()
-                    .map(|file| file.path.clone())
-                    .collect::<Vec<_>>();
-                let missing_files = files
-                    .iter()
-                    .filter(|file| !source_root.join(file).is_file())
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if !missing_files.is_empty() {
-                    warnings.push(format!(
-                        "{} references missing files: {}.",
-                        item.name,
-                        missing_files.join(", ")
-                    ));
-                }
-
-                let mut dependencies = item.dependencies;
-                dependencies.extend(item.registry_dependencies);
-                dependencies.sort();
-                dependencies.dedup();
-
-                SourceCatalogItem {
-                    id: format!("{}:{}", source_id, item.name),
-                    name: item.title.unwrap_or_else(|| title_case(&item.name)),
-                    item_type: if item.item_type.is_empty() {
-                        "registry:ui".to_string()
-                    } else {
-                        item.item_type
-                    },
-                    description: item.description.unwrap_or_else(|| {
-                        "shadcn registry item imported into the source catalog.".to_string()
-                    }),
-                    files,
-                    dependencies,
-                    source_path: registry_path.display().to_string(),
-                    preview_status: "indexed".to_string(),
-                }
-            })
-            .collect::<Vec<_>>();
-        items.sort_by(|left, right| left.name.cmp(&right.name));
-        return Ok((items, warnings));
-    }
-
-    warnings.push("No registry.json found; scanned component files directly.".to_string());
-    let component_dir = source_root.join("components").join("ui");
-    let mut files = Vec::new();
-    collect_files_with_extension(&component_dir, "tsx", &mut files)?;
-    let mut items = files
-        .into_iter()
-        .map(|path| {
-            let name = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or("component")
-                .to_string();
-            let relative = path
-                .strip_prefix(&source_root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
-            SourceCatalogItem {
-                id: format!("{}:{}", source_id, name),
-                name: title_case(&name),
-                item_type: "registry:ui".to_string(),
-                description: "shadcn-style component file discovered from local directory.".to_string(),
-                files: vec![relative],
-                dependencies: Vec::new(),
-                source_path: component_dir.display().to_string(),
-                preview_status: "indexed".to_string(),
-            }
-        })
-        .collect::<Vec<_>>();
-    items.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok((items, warnings))
-}
-
-fn materialize_source_item_files(
-    app: &AppHandle,
-    source: &SourceInfo,
-    item: &SourceCatalogItem,
-) -> Result<Vec<String>, String> {
-    let source_root = resolve_source_location(app, &source.location);
-    let import_root = project_root(app)
-        .join("imports")
-        .join(&source.adapter)
-        .join(&source.id);
-    let mut materialized = Vec::new();
-
-    for file in &item.files {
-        let relative = safe_relative_source_path(file)?;
-        let source_path = source_root.join(&relative);
-        if !source_path.is_file() {
-            return Err(format!(
-                "Cannot import {} because source file {} does not exist.",
-                item.name,
-                source_path.display()
-            ));
-        }
-
-        let target_path = import_root.join(&relative);
-        if let Some(parent) = target_path.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                format!(
-                    "Could not create import directory {}: {error}",
-                    parent.display()
-                )
-            })?;
-        }
-        fs::copy(&source_path, &target_path).map_err(|error| {
-            format!(
-                "Could not copy {} to {}: {error}",
-                source_path.display(),
-                target_path.display()
-            )
-        })?;
-        materialized.push(
-            target_path
-                .strip_prefix(project_root(app))
-                .unwrap_or(&target_path)
-                .display()
-                .to_string(),
-        );
-    }
-
-    Ok(materialized)
-}
-
-fn imported_component_from_source_item(
-    source: &SourceInfo,
-    item: &SourceCatalogItem,
-    materialized_files: &[String],
-) -> ComponentFile {
-    let component_id = slugify(&format!("{} {}", source.id, item.name));
-    let files = if item.files.is_empty() {
-        "none".to_string()
-    } else {
-        item.files.join(", ")
-    };
-    let dependencies = if item.dependencies.is_empty() {
-        "none".to_string()
-    } else {
-        item.dependencies.join(", ")
-    };
-    let materialized = if materialized_files.is_empty() {
-        "none".to_string()
-    } else {
-        materialized_files.join(", ")
-    };
-    let mut props = BTreeMap::new();
-    props.insert("label".to_string(), item.name.clone());
-    props.insert("source".to_string(), source.name.clone());
-    props.insert("adapter".to_string(), source.adapter.clone());
-    props.insert("itemType".to_string(), item.item_type.clone());
-    props.insert("files".to_string(), files.clone());
-    props.insert("materializedFiles".to_string(), materialized.clone());
-    props.insert("dependencies".to_string(), dependencies.clone());
-    props.insert("previewStatus".to_string(), "metadata-import".to_string());
-
-    ComponentFile {
-        component: ComponentInfo {
-            id: component_id,
-            name: format!("{} ({})", item.name, source.name),
-            description: format!(
-                "{} Imported from {} using the {} adapter. Source files: {files}. Local files: {materialized}.",
-                item.description, source.location, source.adapter
-            ),
-            themes: vec!["light".to_string(), "dark".to_string(), "aurora".to_string()],
-        },
-        framework: FrameworkTargets {
-            react: true,
-            svelte: false,
-        },
-        props: vec![
-            ComponentProp {
-                id: "label".to_string(),
-                label: "Label".to_string(),
-                kind: "text".to_string(),
-                default: item.name.clone(),
-                values: Vec::new(),
-            },
-            ComponentProp {
-                id: "source".to_string(),
-                label: "Source".to_string(),
-                kind: "text".to_string(),
-                default: source.name.clone(),
-                values: Vec::new(),
-            },
-            ComponentProp {
-                id: "adapter".to_string(),
-                label: "Adapter".to_string(),
-                kind: "text".to_string(),
-                default: source.adapter.clone(),
-                values: Vec::new(),
-            },
-            ComponentProp {
-                id: "itemType".to_string(),
-                label: "Item Type".to_string(),
-                kind: "text".to_string(),
-                default: item.item_type.clone(),
-                values: Vec::new(),
-            },
-            ComponentProp {
-                id: "files".to_string(),
-                label: "Files".to_string(),
-                kind: "text".to_string(),
-                default: files,
-                values: Vec::new(),
-            },
-            ComponentProp {
-                id: "dependencies".to_string(),
-                label: "Dependencies".to_string(),
-                kind: "text".to_string(),
-                default: dependencies,
-                values: Vec::new(),
-            },
-            ComponentProp {
-                id: "materializedFiles".to_string(),
-                label: "Materialized Files".to_string(),
-                kind: "text".to_string(),
-                default: materialized,
-                values: Vec::new(),
-            },
-            ComponentProp {
-                id: "previewStatus".to_string(),
-                label: "Preview Status".to_string(),
-                kind: "text".to_string(),
-                default: "metadata-import".to_string(),
-                values: Vec::new(),
-            },
-        ],
-        states: vec![ComponentState {
-            id: "imported".to_string(),
-            label: "Imported".to_string(),
-            props,
-        }],
-    }
 }
 
 fn build_index_records(app: &AppHandle) -> Result<Vec<IndexRecord>, String> {
@@ -2316,12 +1931,8 @@ fn build_index_records(app: &AppHandle) -> Result<Vec<IndexRecord>, String> {
 
         for item in catalog.items {
             records.push(IndexRecord {
-                id: format!("shadcn-component:{}", item.id),
-                record_type: if source.source.adapter == "shadcn" {
-                    "shadcn-component".to_string()
-                } else {
-                    "source-item".to_string()
-                },
+                id: format!("source-item:{}", item.id),
+                record_type: "source-item".to_string(),
                 title: item.name,
                 body: format!(
                     "{} Source: {}. Type: {}. Files: {}. Dependencies: {}. Preview: {}.",
@@ -2472,36 +2083,6 @@ fn metadata_dir(app: &AppHandle) -> PathBuf {
         })
 }
 
-fn project_root(app: &AppHandle) -> PathBuf {
-    if let Ok(current_dir) = std::env::current_dir() {
-        if current_dir.join("metadata").is_dir() {
-            return current_dir;
-        }
-
-        let parent = current_dir.join("..");
-        if parent.join("metadata").is_dir() {
-            return parent;
-        }
-    }
-
-    metadata_dir(app)
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-        })
-}
-
-fn resolve_source_location(app: &AppHandle, location: &str) -> PathBuf {
-    let path = PathBuf::from(location);
-    if path.is_absolute() {
-        path
-    } else {
-        project_root(app).join(path)
-    }
-}
-
 fn writable_metadata_dir(app: &AppHandle) -> PathBuf {
     if let Ok(current_dir) = std::env::current_dir() {
         let candidate = current_dir.join("metadata");
@@ -2581,65 +2162,6 @@ fn command_version(program: &str, version_arg: &str) -> CommandStatus {
     }
 }
 
-fn collect_files_with_extension(
-    dir: &Path,
-    extension: &str,
-    output: &mut Vec<PathBuf>,
-) -> Result<(), String> {
-    if !dir.is_dir() {
-        return Ok(());
-    }
-
-    for entry in fs::read_dir(dir)
-        .map_err(|error| format!("Could not read directory {}: {error}", dir.display()))?
-    {
-        let path = entry
-            .map_err(|error| format!("Could not read directory entry {}: {error}", dir.display()))?
-            .path();
-        if path.is_dir() {
-            collect_files_with_extension(&path, extension, output)?;
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some(extension) {
-            output.push(path);
-        }
-    }
-
-    output.sort();
-    Ok(())
-}
-
-fn safe_relative_source_path(value: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(value);
-    if path.is_absolute() {
-        return Err(format!("Source file path {value} must be relative."));
-    }
-
-    if path.components().any(|component| {
-        matches!(
-            component,
-            Component::ParentDir | Component::RootDir | Component::Prefix(_)
-        )
-    }) {
-        return Err(format!("Source file path {value} cannot leave the source directory."));
-    }
-
-    Ok(path)
-}
-
-fn title_case(value: &str) -> String {
-    value
-        .split(['-', '_', ' '])
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2655,7 +2177,6 @@ pub fn run() {
             load_page,
             list_sources,
             load_source_catalog,
-            import_source_item_as_component,
             save_group,
             update_group,
             validate_group,
@@ -2787,83 +2308,13 @@ mod tests {
             .join("sources");
         let sources: Vec<SourceFile> = read_all_toml(&dir).expect("sources should parse");
 
-        assert_eq!(sources.len(), 2);
+        assert_eq!(sources.len(), 1);
         assert!(sources
             .iter()
             .any(|source| source.source.adapter == "local-toml"));
         assert!(sources
             .iter()
-            .any(|source| source.source.adapter == "shadcn"));
-    }
-
-    #[test]
-    fn shadcn_registry_fixture_indexes_items() {
-        let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("examples")
-            .join("shadcn-registry");
-        let (items, warnings) =
-            index_shadcn_source_root("fixture", &source_root).expect("fixture should index");
-
-        assert_eq!(items.len(), 2);
-        assert!(warnings.is_empty());
-        assert!(items.iter().any(|item| item.name == "Button"));
-        assert!(items
-            .iter()
-            .any(|item| item.dependencies.contains(&"class-variance-authority".to_string())));
-    }
-
-    #[test]
-    fn shadcn_item_materializes_as_local_component_metadata() {
-        let source = SourceInfo {
-            id: "shadcn-fixture".to_string(),
-            name: "shadcn Fixture Registry".to_string(),
-            description: "Fixture source".to_string(),
-            adapter: "shadcn".to_string(),
-            kind: "local-directory".to_string(),
-            location: "examples/shadcn-registry".to_string(),
-            enabled: true,
-        };
-        let item = SourceCatalogItem {
-            id: "shadcn-fixture:button".to_string(),
-            name: "Button".to_string(),
-            item_type: "registry:ui".to_string(),
-            description: "Action button fixture.".to_string(),
-            files: vec!["components/ui/button.tsx".to_string()],
-            dependencies: vec!["class-variance-authority".to_string()],
-            source_path: "examples/shadcn-registry/registry.json".to_string(),
-            preview_status: "indexed".to_string(),
-        };
-        let component = imported_component_from_source_item(
-            &source,
-            &item,
-            &["imports/shadcn/shadcn-fixture/components/ui/button.tsx".to_string()],
-        );
-
-        assert_eq!(component.component.id, "shadcn-fixture-button");
-        assert_eq!(component.states[0].id, "imported");
-        assert!(component
-            .states[0]
-            .props
-            .get("dependencies")
-            .is_some_and(|value| value.contains("class-variance-authority")));
-        assert!(component
-            .component
-            .description
-            .contains("examples/shadcn-registry"));
-        assert!(component
-            .states[0]
-            .props
-            .get("materializedFiles")
-            .is_some_and(|value| value.contains("imports/shadcn")));
-    }
-
-    #[test]
-    fn source_file_paths_stay_inside_source_directory() {
-        assert!(safe_relative_source_path("components/ui/button.tsx").is_ok());
-        assert!(safe_relative_source_path("../button.tsx").is_err());
-        assert!(safe_relative_source_path("components/../button.tsx").is_err());
-        assert!(safe_relative_source_path("C:/outside/button.tsx").is_err());
+            .all(|source| source.source.adapter == "local-toml"));
     }
 
     #[test]

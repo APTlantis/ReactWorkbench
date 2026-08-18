@@ -155,20 +155,11 @@ A source defines where component catalog material comes from:
 - `location`
 - `enabled`
 
-The current adapters are:
+The current adapter is:
 
-- `local-toml`: indexes this project’s component, group, and theme TOML.
-- `shadcn`: indexes a local shadcn-style registry or component directory.
+- `local-toml`: indexes this project’s component, variant, group, page, and theme TOML.
 
-For shadcn sources, `location` can point at a local directory with a root `registry.json`. If no registry is present, the adapter scans `components/ui/*.tsx` as a partial catalog. The indexed entries keep file paths, dependencies, source location, and preview status.
-
-Selected shadcn entries can be imported as local component metadata. The current import creates an inspectable placeholder component in `metadata/components` with source, adapter, item type, original file, materialized file, dependency, and preview-status props. Referenced source files are copied under:
-
-```text
-imports/shadcn/<source-id>/
-```
-
-The import rejects absolute paths and `..` path traversal. It does not execute the copied TSX component or infer full prop controls yet.
+External source adapters are not active in the current metadata set. If they return later, they should be introduced through refreshed project records that define provenance, file handling, preview support, and verification behavior before any generated catalog or copied source tree is treated as part of the app.
 
 ## Variants
 

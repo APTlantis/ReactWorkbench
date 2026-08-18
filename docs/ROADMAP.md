@@ -1,6 +1,6 @@
 # Roadmap
 
-Theme Preview started as a deterministic component preview lab so the hard parts would be inspectable before the product became a builder. That remains the right foundation, but the broader direction is now explicit: this should grow into a local-first UI builder that can work with local metadata and imported open-source component systems.
+Theme Preview started as a deterministic component preview lab so the hard parts would be inspectable before the product became a builder. That remains the right foundation, but the broader direction is now explicit: this should grow into a local-first UI builder that can work from explicit local metadata first and reopen external component sources only when that scope is refreshed.
 
 The useful direction is still not “add everything at once.” It is to make component sources easy to register, inspect, preview, compose, and verify.
 
@@ -28,9 +28,7 @@ The useful direction is still not “add everything at once.” It is to make co
 - DuckDB-backed catalog indexing when available
 - catalog search
 - source records under `metadata/sources`
-- first shadcn adapter slice for local registry or `components/ui/*.tsx` directory indexing
 - Sources library tab and source catalog inspector
-- explicit shadcn item import into local component metadata placeholders with copied source files
 - saved component variants under `metadata/variants`
 - variant-backed group items while preserving existing component-state group items
 - saved page records under `metadata/pages`
@@ -41,7 +39,7 @@ The useful direction is still not “add everything at once.” It is to make co
 
 1. Deepen the Variant Workshop
 
-Variants are now the reusable layer between stock components and groups. The next useful work is richer slot presets, more component-specific builders, better prop/state inference for imported components, and export-ready naming controls.
+Variants are now the reusable layer between stock components and groups. The next useful work is richer slot presets, more component-specific builders, better prop/state inference for local metadata, and export-ready naming controls.
 
 2. Keep group composition structured
 
@@ -59,29 +57,25 @@ The first export target should be predictable React output from saved metadata: 
 
 1. Define source records
 
-Source records now describe where component catalog material comes from. The first records cover:
+Source records describe where catalog material comes from. The active record covers:
 
 - local TOML metadata in this project
-- a local directory containing shadcn-style component files
 
-Next useful additions are source add/edit UI, last indexed time, public GitHub source records, and clearer derived-catalog freshness.
+Next useful additions are source add/edit UI for local metadata records, last indexed time, and clearer derived-catalog freshness.
 
-2. Add shadcn import to the books
+2. Keep external adapters out until they have a fresh scope
 
-shadcn is the first external adapter because its registry conventions provide a practical bridge from open-source component code into Theme Preview’s catalog. The current adapter can index local registry metadata, scan local `components/ui/*.tsx` files, import selected entries as local metadata placeholders, and copy referenced source files into `imports/shadcn/<source-id>/`. The next shadcn adapter work should add:
+The app previously carried a fixture adapter for an external component catalog, but that path is no longer part of the active project shape. Any future external adapter should begin with a refreshed plan that defines:
 
-- reading public GitHub registry metadata where available
-- source add/edit UI for local directories
-- richer prop/example inference when discoverable
-- adapter-backed live rendering for imported components beside existing TOML components
-
-This should not assume every shadcn-like repo is perfectly structured. The adapter should start useful with partial metadata, clear warnings, and inspectable source records.
-
-Reference assumption: shadcn-compatible public GitHub registry support is based on the shadcn registry model, where a public repository can expose a root `registry.json` and registry items that reference source files. Local directory support should use the same internal adapter shape even when no registry file exists.
+- supported source type and provenance fields
+- whether source files are copied, referenced, or ignored
+- preview determinism and sandboxing expectations
+- prop/example inference boundaries
+- verification and cleanup rules
 
 3. Normalize component catalogs
 
-Keep local TOML as the first adapter and normalize shadcn imports into the same internal catalog concepts:
+Keep local TOML as the active adapter and preserve the same internal catalog concepts for any future adapter:
 
 - component identity
 - source provenance
@@ -91,9 +85,9 @@ Keep local TOML as the first adapter and normalize shadcn imports into the same 
 - theme/styling requirements
 - preview support status
 
-4. Add adapter-aware preview surfaces
+4. Add adapter-aware preview surfaces only after scope refresh
 
-Imported components should appear beside local components without pretending they are native TOML. The UI should make source, adapter, preview status, and missing requirements obvious. Screenshot export and smoke checks should eventually include adapter-backed previews once they are deterministic enough.
+If imported components return later, they should appear beside local components without pretending they are native TOML. The UI should make source, adapter, preview status, and missing requirements obvious. Screenshot export and smoke checks should include adapter-backed previews only once they are deterministic enough.
 
 ## Builder Foundations
 
@@ -105,9 +99,9 @@ Implemented first slice: a page is an explicit local record, not a hidden genera
 
 Start with structured layout composition rather than freeform canvas editing. Useful first layouts include sections, stacks, grids, split panels, dashboards, forms, and table areas.
 
-3. Add source switching
+3. Keep source selection explicit
 
-The builder should let the user choose which component source or sources are active: local TOML, imported shadcn components, and later other adapters.
+The builder should make the active component source visible. Today that source is local TOML metadata.
 
 4. Verify built pages
 
@@ -117,15 +111,15 @@ Extend screenshot export, comparison reports, and visual smoke checks from compo
 
 - Add a compact metadata example index to the metadata guide.
 - Add smoke coverage that confirms tabs and table controls render in group previews without clipping or text overflow.
-- Improve source/catalog search so imported libraries remain usable as the catalog grows.
+- Improve source/catalog search so local metadata remains usable as the catalog grows.
 - Keep report ergonomics tight enough for page-level review.
 - Revisit release packaging separately from feature expansion.
 
 ## Later Adapters
 
 - Flowbite React adapter for package-oriented React/Tailwind components.
-- Additional shadcn registries and community component sets.
 - User-authored component repos.
+- External component-library adapters after a refreshed source-adapter plan.
 - Optional embedding-assisted search for large catalogs.
 
 Embeddings should help retrieve and compare existing components. They should not replace the deterministic source, adapter, group, page, or theme records.

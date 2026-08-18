@@ -123,7 +123,7 @@ known_gaps = [
     "Signing is not configured; current signing posture is unsigned until proven otherwise.",
     "Git status requires non-global safe.directory handling because of local ownership metadata.",
     "D:\\Development.manifest.toml is referenced by root instructions but was absent during onboarding; this project does not create it.",
-    "Local source records, local shadcn registry/directory indexing, explicit shadcn item import as metadata placeholders, local source-file materialization, saved variants, variant-backed groups, and block-based page metadata exist; public GitHub shadcn import, adapter-backed live previews, richer prop inference, and React export generation are not implemented yet.",
+    "Local source records, saved variants, variant-backed groups, and block-based page metadata exist; external component adapters, adapter-backed live previews, richer prop inference, and React export generation are not implemented yet.",
 ]
 technical_debt = "moderate"
 
@@ -211,8 +211,7 @@ primary_concepts = [
     "component metadata",
     "theme tokens",
     "component groups",
-    "source adapters",
-    "shadcn import",
+    "source records",
     "saved variants",
     "page builder foundation",
     "visual verification",
